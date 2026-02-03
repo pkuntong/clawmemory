@@ -1,14 +1,15 @@
 import { Brain, Clock, Link2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Id } from "../../convex/_generated/dataModel";
 
-interface Memory {
-  id: string;
-  agentId: string;
+export interface Memory {
+  _id: Id<"memories">;
+  agentId: Id<"agents">;
   agentName: string;
   type: "insight" | "experience" | "learning" | "pattern";
   content: string;
-  connections: number;
-  timestamp: string;
+  connectionCount?: number;
+  createdAt: number;
   quality: number;
 }
 
@@ -23,6 +24,17 @@ const typeConfig = {
   learning: { icon: Sparkles, label: "Learning", color: "text-accent" },
   pattern: { icon: Link2, label: "Pattern", color: "text-primary" },
 };
+
+function timeAgo(timestamp: number): string {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
 export const MemoryCard = ({ memory, className }: MemoryCardProps) => {
   const config = typeConfig[memory.type];
@@ -58,7 +70,7 @@ export const MemoryCard = ({ memory, className }: MemoryCardProps) => {
             </span>
           </div>
         </div>
-        
+
         {/* Quality indicator */}
         <div className="flex items-center gap-1">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -85,14 +97,14 @@ export const MemoryCard = ({ memory, className }: MemoryCardProps) => {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5">
             <Link2 className="w-3.5 h-3.5 text-primary/70" />
-            <span>{memory.connections} connections</span>
+            <span>{memory.connectionCount ?? 0} connections</span>
           </div>
           <div className="flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5" />
-            <span>{memory.timestamp}</span>
+            <span>{timeAgo(memory.createdAt)}</span>
           </div>
         </div>
-        
+
         <div className="opacity-0 group-hover:opacity-100 transition-opacity">
           <span className="text-primary">View details →</span>
         </div>

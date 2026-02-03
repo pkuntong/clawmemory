@@ -18,7 +18,12 @@ export const SearchInput = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSearch?.(value);
+    onSearch?.(value.trim());
+  };
+
+  const handleClear = () => {
+    setValue("");
+    onSearch?.("");
   };
 
   return (
@@ -55,6 +60,13 @@ export const SearchInput = ({
         
         {value && (
           <div className="absolute right-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleClear}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Clear
+            </button>
             <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-1 text-xs font-mono text-muted-foreground bg-muted rounded border border-border">
               Enter
             </kbd>

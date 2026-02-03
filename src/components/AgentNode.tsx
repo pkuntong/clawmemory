@@ -1,12 +1,13 @@
 import { cn } from "@/lib/utils";
 import { Bot } from "lucide-react";
+import { Id } from "../../convex/_generated/dataModel";
 
-interface Agent {
-  id: string;
+export interface Agent {
+  _id: Id<"agents">;
   name: string;
   status: "active" | "syncing" | "idle";
   memoriesCount: number;
-  lastActive: string;
+  lastActive: number;
 }
 
 interface AgentNodeProps {
@@ -54,7 +55,7 @@ export const AgentNode = ({ agent, className }: AgentNodeProps) => {
         >
           <Bot className="w-8 h-8 text-foreground/70" />
         </div>
-        
+
         {/* Status dot */}
         <div
           className={cn(
