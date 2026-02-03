@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=clash-display@200,300,400,500,600,700&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -19,6 +21,10 @@
     /* Electric cyan - primary connection color */
     --primary: 185 100% 50%;
     --primary-foreground: 225 25% 4%;
+
+    /* OpenClaw-inspired Coral Red */
+    --mascot: 2 78% 59%;
+    --mascot-glow: 2 78% 59% / 0.5;
 
     /* Warm amber - active/memory color */
     --secondary: 35 100% 55%;
@@ -253,6 +259,34 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@keyframes hero-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 15px hsl(var(--mascot) / 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 30px hsl(var(--mascot) / 0.7));
+  }
+}
+
+@keyframes eye-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 5px hsl(var(--primary) / 0.8));
+    opacity: 1;
+  }
+  50% {
+    filter: drop-shadow(0 0 12px hsl(var(--primary) / 1));
+    opacity: 0.8;
+  }
+}
+
+.animate-hero-glow {
+  animation: hero-glow 4s ease-in-out infinite;
+}
+
+.animate-eye-glow {
+  animation: eye-glow 2s ease-in-out infinite;
 }
 
 .animate-pulse-glow {

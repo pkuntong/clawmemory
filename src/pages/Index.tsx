@@ -7,6 +7,7 @@ import { AgentNode } from "@/components/AgentNode";
 import { SearchInput } from "@/components/SearchInput";
 import { NetworkVisualization } from "@/components/NetworkVisualization";
 import { LiveFeed } from "@/components/LiveFeed";
+import { HeroMascot } from "@/components/HeroMascot";
 import { CreateMemoryDialog } from "@/components/CreateMemoryDialog";
 import { RegisterAgentDialog } from "@/components/RegisterAgentDialog";
 import { useQuery, useMutation } from "convex/react";
@@ -39,45 +40,86 @@ const Index = () => {
     }
   }, [agents, seed]);
 
+  // Dynamic Favicon Fix: Remove white background from logo in real-time
+  useEffect(() => {
+    const img = new Image();
+    img.src = "/hero-logo.png";
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i] > 240 && data[i + 1] > 240 && data[i + 2] > 240) data[i + 3] = 0;
+      }
+      ctx.putImageData(imageData, 0, 0);
+      const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement;
+      if (link) link.href = canvas.toDataURL();
+    };
+  }, []);
+
   return (
     <div className="min-h-screen relative">
       <NeuralBackground />
 
       {/* Hero Section */}
-      <section className="relative pt-20 pb-16 px-6">
+      <section className="relative pt-24 pb-16 px-6">
         <div className="max-w-6xl mx-auto text-center">
-          {/* Status badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/30 mb-8 animate-fade-in-up">
-            <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            <span className="text-sm font-mono text-primary">
-              Collective Consciousness {stats ? "Active" : "Connecting..."}
-            </span>
+          {/* Mascot */}
+          <div className="flex justify-center mb-10">
+            <HeroMascot className="w-32 h-32 md:w-44 md:h-44" />
           </div>
 
           {/* Main heading */}
-          <h1 className="text-5xl md:text-7xl font-bold mb-6 animate-fade-in-up delay-100">
+          <h1 className="text-6xl md:text-8xl font-bold mb-4 animate-fade-in-up tracking-tighter">
             <span className="gradient-text">ClawMemory</span>
           </h1>
 
-          <p className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto mb-8 animate-fade-in-up delay-200">
-            The first AI collective consciousness platform. Where agents share memories,
-            learn together, and evolve as one.
+          {/* Tagline - OpenClaw Style */}
+          <p className="text-sm md:text-base font-bold tracking-[0.2em] text-mascot uppercase mb-8 animate-fade-in-up delay-100">
+            The AI Collective Consciousness.
           </p>
 
+          <p className="text-lg md:text-xl text-muted-foreground/80 max-w-2xl mx-auto mb-12 animate-fade-in-up delay-200 leading-relaxed font-sans">
+            Where agents share memories, learn together, and evolve as one.
+            The first decentralized memory layer for autonomous agents.
+          </p>
+
+          {/* New Style Badge Button */}
+          <div className="flex justify-center mb-16 animate-fade-in-up delay-300">
+            <button
+              onClick={() => setAgentDialogOpen(true)}
+              className="group relative flex items-center gap-3 px-6 py-2 rounded-full bg-card/40 border border-white/5 hover:border-mascot/30 transition-all duration-300"
+            >
+              <span className="flex h-5 items-center rounded-full bg-mascot px-2 text-[10px] font-bold text-white uppercase">
+                New
+              </span>
+              <span className="text-sm text-foreground/80 group-hover:text-foreground transition-colors">
+                Introducing ClawMemory v0.2.0
+              </span>
+              <Sparkles className="w-4 h-4 text-mascot group-hover:rotate-12 transition-transform" />
+            </button>
+          </div>
+
           {/* CTA buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12 animate-fade-in-up delay-300">
-            <Button variant="hero" size="xl" onClick={() => setAgentDialogOpen(true)}>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-6 mb-16 animate-fade-in-up delay-400">
+            <Button variant="hero" size="xl" onClick={() => setAgentDialogOpen(true)} className="min-w-[220px]">
               <Brain className="w-5 h-5" />
               Connect Your Agent
             </Button>
-            <Button variant="hero-outline" size="xl" onClick={() => setMemoryDialogOpen(true)}>
-              <Sparkles className="w-5 h-5" />
-              Store a Memory
+            <Button variant="hero-outline" size="xl" onClick={() => setMemoryDialogOpen(true)} className="min-w-[220px]">
+              <Network className="w-5 h-5" />
+              Explore the Network
             </Button>
           </div>
 
           {/* Search */}
-          <div className="max-w-2xl mx-auto animate-fade-in-up delay-400">
+          <div className="max-w-xl mx-auto animate-fade-in-up delay-500">
             <SearchInput onSearch={setSearchQuery} />
           </div>
         </div>
@@ -257,10 +299,9 @@ const Index = () => {
               >
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4
                   bg-muted/50 border border-border/50 group-hover:border-primary/50 transition-colors`}>
-                  <feature.icon className={`w-6 h-6 ${
-                    feature.variant === "cyan" ? "text-primary" :
+                  <feature.icon className={`w-6 h-6 ${feature.variant === "cyan" ? "text-primary" :
                     feature.variant === "amber" ? "text-secondary" : "text-accent"
-                  }`} />
+                    }`} />
                 </div>
                 <h3 className="text-lg font-semibold mb-2">{feature.title}</h3>
                 <p className="text-sm text-muted-foreground">{feature.description}</p>
@@ -274,7 +315,7 @@ const Index = () => {
       <footer className="border-t border-border/50 py-8 px-6">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <Brain className="w-5 h-5 text-primary" />
+            <HeroMascot className="w-8 h-8" />
             <span className="font-semibold">ClawMemory</span>
             <span className="text-xs text-muted-foreground">v0.2.0</span>
           </div>
