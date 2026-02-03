@@ -51,6 +51,9 @@ export const search = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    if (args.query.length > 500) {
+      throw new Error("Search query too long (max 500 characters)");
+    }
     if (!args.query.trim()) {
       return ctx.db.query("memories").order("desc").take(args.limit ?? 20);
     }
@@ -87,6 +90,27 @@ export const store = mutation({
     tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
+    // Input validation
+    if (args.content.length > 10000) {
+      throw new Error("Content too long (max 10,000 characters)");
+    }
+    if (args.content.trim().length === 0) {
+      throw new Error("Content cannot be empty");
+    }
+    if (args.quality < 1 || args.quality > 5 || !Number.isInteger(args.quality)) {
+      throw new Error("Quality must be an integer between 1 and 5");
+    }
+    if (args.tags) {
+      if (args.tags.length > 20) {
+        throw new Error("Too many tags (max 20)");
+      }
+      for (const tag of args.tags) {
+        if (tag.length > 50) {
+          throw new Error("Tag too long (max 50 characters)");
+        }
+      }
+    }
+
     // Get agent name for denormalization
     const agent = await ctx.db.get(args.agentId);
     if (!agent) throw new Error("Agent not found");

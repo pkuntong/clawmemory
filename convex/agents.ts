@@ -20,6 +20,26 @@ export const register = mutation({
     description: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Input validation
+    if (args.name.trim().length === 0) {
+      throw new Error("Agent name cannot be empty");
+    }
+    if (args.name.length > 100) {
+      throw new Error("Agent name too long (max 100 characters)");
+    }
+    if (args.description && args.description.length > 500) {
+      throw new Error("Description too long (max 500 characters)");
+    }
+
+    // Check for duplicate names
+    const existing = await ctx.db
+      .query("agents")
+      .withIndex("by_name", (q) => q.eq("name", args.name.trim()))
+      .first();
+    if (existing) {
+      throw new Error("An agent with this name already exists");
+    }
+
     const now = Date.now();
     const agentId = await ctx.db.insert("agents", {
       name: args.name,

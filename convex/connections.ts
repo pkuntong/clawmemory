@@ -51,6 +51,17 @@ export const create = mutation({
     label: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Input validation
+    if (args.sourceMemoryId === args.targetMemoryId) {
+      throw new Error("Cannot connect a memory to itself");
+    }
+    if (args.strength !== undefined && (args.strength < 0 || args.strength > 1)) {
+      throw new Error("Strength must be between 0 and 1");
+    }
+    if (args.label && args.label.length > 100) {
+      throw new Error("Label too long (max 100 characters)");
+    }
+
     const source = await ctx.db.get(args.sourceMemoryId);
     const target = await ctx.db.get(args.targetMemoryId);
     if (!source || !target) throw new Error("Memory not found");
