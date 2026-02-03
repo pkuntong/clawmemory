@@ -24,12 +24,23 @@ export const HeroMascot = ({ className }: HeroMascotProps) => {
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const data = imageData.data;
 
-            // Remove white background (pixels near white)
+            // Advanced white removal with feathering to eliminate halos and shadows
             for (let i = 0; i < data.length; i += 4) {
                 const r = data[i], g = data[i + 1], b = data[i + 2];
-                // If it's very bright (near white), make it transparent
-                if (r > 240 && g > 240 && b > 240) {
-                    data[i + 3] = 0;
+
+                // Distance from pure white in RGB space
+                const whiteDist = Math.sqrt(
+                    Math.pow(255 - r, 2) +
+                    Math.pow(255 - g, 2) +
+                    Math.pow(255 - b, 2)
+                );
+
+                // Aggressive threshold for white-ish pixels
+                if (whiteDist < 130) {
+                    // Pixels extremely close to white become 100% transparent.
+                    // Pixels slightly further away get proportional alpha to smoothly blend edges.
+                    const newAlpha = Math.max(0, Math.min(255, (whiteDist - 40) * 2.8));
+                    data[i + 3] = Math.min(data[i + 3], newAlpha);
                 }
             }
             ctx.putImageData(imageData, 0, 0);
