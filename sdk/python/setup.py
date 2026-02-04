@@ -44,4 +44,5 @@ setup(
             "clawmemory=clawmemory.cli:main",
         ],
     },
+}
 )

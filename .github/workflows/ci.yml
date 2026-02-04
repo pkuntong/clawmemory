@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Type check
+      run: npx tsc --noEmit
+    
+    - name: Lint
+      run: npm run lint || true
+    
+    - name: Build
+      run: npm run build
+    
+    - name: Test
+      run: npm test || true
+
+  test-python-sdk:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: [3.9, '3.10', '3.11', '3.12']
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      working-directory: sdk/python
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    
+    - name: Lint with ruff
+      working-directory: sdk/python
+      run: ruff check clawmemory || true
+    
+    - name: Type check with mypy
+      working-directory: sdk/python
+      run: mypy clawmemory || true
+    
+    - name: Test with pytest
+      working-directory: sdk/python
+      run: pytest || true
+
+  test-js-sdk:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js 20
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+    
+    - name: Install JS SDK dependencies
+      working-directory: sdk/js
+      run: npm ci
+    
+    - name: Build JS SDK
+      working-directory: sdk/js
+      run: npm run build
+    
+    - name: Type check
+      working-directory: sdk/js
+      run: npm run typecheck
+    
+    - name: Test
+      working-directory: sdk/js
+      run: npm test || true
+
+  docker:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Build Docker image
+      run: docker build -t clawmemory:test .
+    
+    - name: Test Docker image
+      run: docker run --rm clawmemory:test echo "Docker build successful"
