@@ -20,6 +20,96 @@ from .exceptions import (
 from .models import Memory, Agent, QueryResult
 
 
+class ClawMemoryWebhooks:
+    """
+    Manage webhooks for ClawMemory.
+    
+    Example:
+        webhooks = ClawMemoryWebhooks(api_key="your_key")
+        
+        # Register a webhook
+        webhooks.register(
+            url="https://your-app.com/webhook",
+            events=["memory.created", "agent.status_changed"],
+        )
+    """
+    
+    def __init__(self, api_key: str, base_url: Optional[str] = None):
+        self.api_key = api_key
+        self.base_url = base_url or "http://localhost:5173"
+        self.session = requests.Session()
+        self.session.headers.update({
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        })
+    
+    def register(
+        self,
+        url: str,
+        events: List[str],
+        secret: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Register a webhook endpoint."""
+        payload = {
+            "url": url,
+            "events": events,
+            "secret": secret,
+            "metadata": metadata,
+        }
+        
+        response = self.session.post(
+            f"{self.base_url}/api/webhooks/register",
+            json=payload,
+        )
+        
+        if response.status_code == 401:
+            raise AuthenticationError()
+        elif response.status_code >= 400:
+            error = response.json()
+            raise ClawMemoryError(error.get("error", "Failed to register webhook"))
+        
+        return response.json()
+    
+    def list(self) -> List[Dict[str, Any]]:
+        """List all webhooks."""
+        response = self.session.get(f"{self.base_url}/api/webhooks")
+        
+        if response.status_code == 401:
+            raise AuthenticationError()
+        elif response.status_code >= 400:
+            error = response.json()
+            raise ClawMemoryError(error.get("error", "Failed to list webhooks"))
+        
+        return response.json().get("webhooks", [])
+    
+    def delete(self, webhook_id: str) -> None:
+        """Delete a webhook."""
+        response = self.session.delete(f"{self.base_url}/api/webhooks/{webhook_id}")
+        
+        if response.status_code == 401:
+            raise AuthenticationError()
+        elif response.status_code == 404:
+            raise NotFoundError("Webhook")
+        elif response.status_code >= 400:
+            error = response.json()
+            raise ClawMemoryError(error.get("error", "Failed to delete webhook"))
+    
+    @staticmethod
+    def verify_signature(payload: str, signature: str, secret: str) -> bool:
+        """Verify a webhook signature."""
+        import hmac
+        import hashlib
+        
+        expected = hmac.new(
+            secret.encode(),
+            payload.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        
+        return hmac.compare_digest(signature, expected)
+
+
 class ClawMemoryClient:
     """
     Client for interacting with the ClawMemory collective consciousness.

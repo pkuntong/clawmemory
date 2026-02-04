@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ClawMemory SDK Example</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      line-height: 1.6;
+    }
+    h1 { color: #333; }
+    .section {
+      background: #f5f5f5;
+      padding: 1rem;
+      margin: 1rem 0;
+      border-radius: 8px;
+    }
+    button {
+      background: #007acc;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 0.25rem;
+    }
+    button:hover { background: #005999; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    input, textarea {
+      width: 100%;
+      padding: 0.5rem;
+      margin: 0.25rem 0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    #output {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 1rem;
+      border-radius: 4px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      max-height: 400px;
+      overflow-y: auto;
+      margin-top: 1rem;
+    }
+    .memory {
+      background: white;
+      padding: 0.75rem;
+      margin: 0.5rem 0;
+      border-left: 3px solid #007acc;
+      border-radius: 0 4px 4px 0;
+    }
+    .memory-type {
+      font-size: 0.75rem;
+      color: #666;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <h1>🦞 ClawMemory JavaScript SDK Demo</h1>
+
+  <div class="section">
+    <h3>Configuration</h3>
+    <input type="text" id="apiKey" placeholder="API Key (claw_...)" />
+    <input type="text" id="baseUrl" placeholder="Base URL (http://localhost:5173)" value="http://localhost:5173" />
+  </div>
+
+  <div class="section">
+    <h3>Agent</h3>
+    <button onclick="getAgentInfo()">Get Agent Info</button>
+    <button onclick="healthCheck()">Health Check</button>
+  </div>
+
+  <div class="section">
+    <h3>Store Memory</h3>
+    <textarea id="memoryContent" rows="3" placeholder="Memory content..."></textarea>
+    <select id="memoryType">
+      <option value="insight">Insight</option>
+      <option value="experience">Experience</option>
+      <option value="learning">Learning</option>
+      <option value="pattern">Pattern</option>
+    </select>
+    <input type="number" id="memoryQuality" min="1" max="5" value="3" placeholder="Quality (1-5)" />
+    <input type="text" id="memoryTags" placeholder="Tags (comma-separated)" />
+    <button onclick="storeMemory()">Store Memory</button>
+  </div>
+
+  <div class="section">
+    <h3>Search & Query</h3>
+    <input type="text" id="searchQuery" placeholder="Search query..." />
+    <button onclick="searchMemories()">Search</button>
+    <button onclick="queryCollective()">Query Collective</button>
+    <button onclick="getMemories()">Get Recent</button>
+  </div>
+
+  <div class="section">
+    <h3>Realtime</h3>
+    <button id="connectBtn" onclick="connectRealtime()">Connect</button>
+    <button onclick="disconnectRealtime()">Disconnect</button>
+    <span id="realtimeStatus" style="margin-left: 1rem; color: #666;">Disconnected</span>
+  </div>
+
+  <div id="output"></div>
+
+  <script type="module">
+    import { ClawMemoryClient, ClawMemoryRealtime } from '../dist/index.esm.js';
+
+    let client = null;
+    let realtime = null;
+
+    window.log = (message) => {
+      const output = document.getElementById('output');
+      output.textContent += message + '\n';
+      output.scrollTop = output.scrollHeight;
+    };
+
+    window.clearLog = () => {
+      document.getElementById('output').textContent = '';
+    };
+
+    window.getClient = () => {
+      const apiKey = document.getElementById('apiKey').value;
+      const baseUrl = document.getElementById('baseUrl').value;
+      
+      if (!apiKey) {
+        log('❌ Please enter an API key');
+        return null;
+      }
+
+      if (!client) {
+        client = new ClawMemoryClient({ apiKey, baseUrl });
+      }
+      return client;
+    };
+
+    window.healthCheck = async () => {
+      clearLog();
+      const client = getClient();
+      if (!client) return;
+
+      try {
+        log('Checking health...');
+        const health = await client.healthCheck();
+        log(`✅ ${health.service} v${health.version}`);
+        log(`   Status: ${health.status}`);
+      } catch (error) {
+        log(`❌ Error: ${error.message}`);
+      }
+    };
+
+    window.getAgentInfo = async () => {
+      clearLog();
+      const client = getClient();
+      if (!client) return;
+
+      try {
+        log('Getting agent info...');
+        const agent = await client.getAgentInfo();
+        log(`🤖 ${agent.name}`);
+        log(`   Status: ${agent.status}`);
+        log(`   Memories: ${agent.memoriesCount}`);
+        log(`   Permissions: ${agent.permissions?.join(', ')}`);
+      } catch (error) {
+        log(`❌ Error: ${error.message}`);
+      }
+    };
+
+    window.storeMemory = async () => {
+      clearLog();
+      const client = getClient();
+      if (!client) return;
+
+      const content = document.getElementById('memoryContent').value;
+      const type = document.getElementById('memoryType').value;
+      const quality = parseInt(document.getElementById('memoryQuality').value);
+      const tags = document.getElementById('memoryTags').value
+        .split(',')
+        .map(t => t.trim())
+        .filter(t => t);
+
+      if (!content) {
+        log('❌ Please enter memory content');
+        return;
+      }
+
+      try {
+        log('Storing memory...');
+        const id = await client.storeMemory({ content, type, quality, tags });
+        log(`✅ Stored: ${id}`);
+      } catch (error) {
+        log(`❌ Error: ${error.message}`);
+      }
+    };
+
+    window.searchMemories = async () => {
+      clearLog();
+      const client = getClient();
+      if (!client) return;
+
+      const query = document.getElementById('searchQuery').value;
+      if (!query) {
+        log('❌ Please enter a search query');
+        return;
+      }
+
+      try {
+        log(`Searching for "${query}"...`);
+        const results = await client.search(query, { limit: 10 });
+        log(`Found ${results.length} results:\n`);
+        
+        for (const memory of results) {
+          log(`[${memory.type}] ${memory.content.substring(0, 100)}...`);
+          log(`   Quality: ${memory.quality}/5 | Agent: ${memory.agentName}\n`);
+        }
+      } catch (error) {
+        log(`❌ Error: ${error.message}`);
+      }
+    };
+
+    window.queryCollective = async () => {
+      clearLog();
+      const client = getClient();
+      if (!client) return;
+
+      const query = document.getElementById('searchQuery').value;
+      if (!query) {
+        log('❌ Please enter a query');
+        return;
+      }
+
+      try {
+        log(`Querying: "${query}"...`);
+        const result = await client.query(query, { limit: 5 });
+        
+        log(`\n📚 ${result.memories.length} Memories:`);
+        for (const memory of result.memories) {
+          log(`   • ${memory.content.substring(0, 80)}...`);
+        }
+
+        if (result.insights.length > 0) {
+          log(`\n💡 Insights:`);
+          for (const insight of result.insights) {
+            log(`   • ${insight}`);
+          }
+        }
+      } catch (error) {
+        log(`❌ Error: ${error.message}`);
+      }
+    };
+
+    window.getMemories = async () => {
+      clearLog();
+      const client = getClient();
+      if (!client) return;
+
+      try {
+        log('Getting recent memories...');
+        const memories = await client.getMemories({ limit: 10 });
+        
+        for (const memory of memories) {
+          const date = new Date(memory.createdAt).toLocaleString();
+          log(`[${date}]`);
+          log(`   ${memory.content.substring(0, 100)}...`);
+          log(`   Type: ${memory.type} | Quality: ${memory.quality}/5\n`);
+        }
+      } catch (error) {
+        log(`❌ Error: ${error.message}`);
+      }
+    };
+
+    window.connectRealtime = () => {
+      if (realtime?.connected) {
+        log('Already connected');
+        return;
+      }
+
+      const apiKey = document.getElementById('apiKey').value;
+      const baseUrl = document.getElementById('baseUrl').value;
+
+      if (!apiKey) {
+        log('❌ Please enter an API key');
+        return;
+      }
+
+      clearLog();
+      log('Connecting to realtime...');
+
+      realtime = new ClawMemoryRealtime({ apiKey, baseUrl });
+
+      realtime.on('connected', () => {
+        document.getElementById('realtimeStatus').textContent = 'Connected';
+        document.getElementById('realtimeStatus').style.color = '#4caf50';
+        log('✅ Realtime connected');
+      });
+
+      realtime.on('disconnected', () => {
+        document.getElementById('realtimeStatus').textContent = 'Disconnected';
+        document.getElementById('realtimeStatus').style.color = '#666';
+        log('🔌 Realtime disconnected');
+      });
+
+      realtime.on('memory.created', (event) => {
+        log(`📥 New memory: ${event.data.content.substring(0, 60)}...`);
+      });
+
+      realtime.on('error', (error) => {
+        log(`❌ Realtime error: ${error.message}`);
+      });
+
+      realtime.connect();
+    };
+
+    window.disconnectRealtime = () => {
+      if (realtime) {
+        realtime.disconnect();
+        realtime = null;
+      }
+    };
+  </script>
+</body>
+</html>

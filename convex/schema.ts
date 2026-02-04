@@ -83,4 +83,20 @@ export default defineSchema({
   })
     .index("by_agent_date", ["agentId", "date"])
     .index("by_date", ["date"]),
+
+  // Webhooks for external notifications
+  webhooks: defineTable({
+    agentId: v.id("agents"),
+    url: v.string(),
+    events: v.array(v.string()),
+    secret: v.optional(v.string()),
+    metadata: v.optional(v.record(v.string(), v.any())),
+    active: v.boolean(),
+    createdAt: v.number(),
+    lastSuccess: v.optional(v.number()),
+    lastFailure: v.optional(v.number()),
+    failureCount: v.number(),
+  })
+    .index("by_agent", ["agentId"])
+    .index("by_active", ["active"]),
 });
