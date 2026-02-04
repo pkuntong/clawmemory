@@ -1,6 +1,50 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 
+export const get = query({
+  args: { id: v.id("memories") },
+  handler: async (ctx, args) => {
+    return ctx.db.get(args.id);
+  },
+});
+
+export const getRelated = query({
+  args: { memoryId: v.id("memories") },
+  handler: async (ctx, args) => {
+    // Get all connections for this memory
+    const sourceConns = await ctx.db
+      .query("connections")
+      .withIndex("by_source", (q) => q.eq("sourceMemoryId", args.memoryId))
+      .take(10);
+    
+    const targetConns = await ctx.db
+      .query("connections")
+      .withIndex("by_target", (q) => q.eq("targetMemoryId", args.memoryId))
+      .take(10);
+
+    // Fetch related memories
+    const relatedIds = [
+      ...sourceConns.map(c => c.targetMemoryId),
+      ...targetConns.map(c => c.sourceMemoryId),
+    ];
+
+    const related = await Promise.all(
+      relatedIds.map(id => ctx.db.get(id))
+    );
+
+    return related.filter(Boolean).map((memory, idx) => {
+      const conn = idx < sourceConns.length 
+        ? sourceConns[idx] 
+        : targetConns[idx - sourceConns.length];
+      return {
+        ...memory,
+        connectionStrength: conn?.strength || 0,
+        connectionLabel: conn?.label,
+      };
+    });
+  },
+});
+
 export const list = query({
   args: {
     limit: v.optional(v.number()),
