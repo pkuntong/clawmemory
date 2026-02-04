@@ -75,7 +75,80 @@ export const sendTest = internalMutation({
 });
 
 /**
- * Trigger webhooks for an event
+ * Get webhook by ID
+ */
+export const getById = internalQuery({
+  args: {
+    webhookId: v.id("webhooks"),
+  },
+  handler: async (ctx, args) => {
+    return ctx.db.get(args.webhookId);
+  },
+});
+
+/**
+ * Get webhooks for a specific event
+ */
+export const getForEvent = internalQuery({
+  args: {
+    event: v.string(),
+    agentId: v.optional(v.id("agents")),
+  },
+  handler: async (ctx, args) => {
+    const allWebhooks = await ctx.db
+      .query("webhooks")
+      .withIndex("by_active", q => q.eq("active", true))
+      .collect();
+
+    return allWebhooks.filter(w => {
+      // Check if webhook is subscribed to this event
+      const eventMatch = w.events.includes(args.event) || w.events.includes("*");
+      
+      // Filter by agent if specified
+      const agentMatch = !args.agentId || w.agentId === args.agentId;
+      
+      return eventMatch && agentMatch;
+    });
+  },
+});
+
+/**
+ * Update webhook status after delivery attempt
+ */
+export const updateStatus = internalMutation({
+  args: {
+    webhookId: v.id("webhooks"),
+    success: v.boolean(),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const webhook = await ctx.db.get(args.webhookId);
+    if (!webhook) return;
+
+    if (args.success) {
+      await ctx.db.patch(args.webhookId, {
+        lastSuccess: Date.now(),
+        failureCount: 0,
+      });
+    } else {
+      const newFailureCount = (webhook.failureCount || 0) + 1;
+      const updates: any = {
+        lastFailure: Date.now(),
+        failureCount: newFailureCount,
+      };
+
+      // Deactivate webhook after 10 consecutive failures
+      if (newFailureCount >= 10) {
+        updates.active = false;
+      }
+
+      await ctx.db.patch(args.webhookId, updates);
+    }
+  },
+});
+
+/**
+ * Trigger webhooks for an event - schedules action for delivery
  */
 export const trigger = internalMutation({
   args: {
@@ -84,21 +157,11 @@ export const trigger = internalMutation({
     agentId: v.optional(v.id("agents")),
   },
   handler: async (ctx, args) => {
-    // Find all webhooks subscribed to this event
-    const allWebhooks = await ctx.db.query("webhooks").collect();
-    const matchingWebhooks = allWebhooks.filter(
-      w => w.active && w.events.includes(args.event)
-    );
-
-    // Filter by agent if specified
-    const webhooks = args.agentId
-      ? matchingWebhooks.filter(w => w.agentId === args.agentId)
-      : matchingWebhooks;
-
-    // Schedule webhook deliveries (in production, use an action for HTTP calls)
-    for (const webhook of webhooks) {
-      console.log(`Would trigger webhook ${webhook._id} for event ${args.event}`);
-      // In production: schedule action to POST to webhook.url
-    }
+    // Schedule webhook delivery action
+    await ctx.scheduler.runAfter(0, api.webhooks_actions.scheduleWebhooks, {
+      event: args.event,
+      payload: args.data,
+      agentId: args.agentId,
+    });
   },
 });
