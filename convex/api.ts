@@ -2,7 +2,16 @@ import { query, mutation, internalQuery, internalMutation } from "../_generated/
 import { v } from "convex/values";
 import { api } from "../_generated/api";
 
-// Simple hash function for API keys (not cryptographically secure, but sufficient for demo)
+// Helper functions
+function generateRandomString(length: number): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
 async function hashString(str: string): Promise<string> {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -572,23 +581,3 @@ export const queryCollectiveInternal = internalQuery({
     };
   },
 });
-
-// Helper functions
-function generateRandomString(length: number): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
-async function hashString(str: string): Promise<string> {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(16).padStart(64, '0');
-}

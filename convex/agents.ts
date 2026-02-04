@@ -132,27 +132,6 @@ export const register = mutation({
   },
 });
 
-// Simple hash function (not cryptographically secure, but sufficient for demo)
-async function hashString(str: string): Promise<string> {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(16).padStart(64, '0');
-}
-
-// Generate random string
-function generateRandomString(length: number): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
 export const updateStatus = mutation({
   args: {
     id: v.id("agents"),
