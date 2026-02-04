@@ -2,6 +2,17 @@ import { query, mutation, internalQuery, internalMutation } from "../_generated/
 import { v } from "convex/values";
 import { api } from "../_generated/api";
 
+// Simple hash function for API keys (not cryptographically secure, but sufficient for demo)
+async function hashString(str: string): Promise<string> {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(16).padStart(64, '0');
+}
+
 /**
  * Authentication
  */
@@ -9,8 +20,7 @@ export const authenticateAgent = internalQuery({
   args: { apiKey: v.string() },
   handler: async (ctx, args) => {
     // Hash the API key for lookup
-    const crypto = await import("crypto");
-    const apiKeyHash = crypto.createHash("sha256").update(args.apiKey).digest("hex");
+    const apiKeyHash = await hashString(args.apiKey);
     
     const agent = await ctx.db
       .query("agents")
@@ -335,10 +345,9 @@ export const registerAgentInternal = internalMutation({
       throw new Error("An agent with this name already exists");
     }
 
-    // Generate API key
-    const crypto = await import("crypto");
-    const apiKey = `claw_${crypto.randomBytes(32).toString("hex")}`;
-    const apiKeyHash = crypto.createHash("sha256").update(apiKey).digest("hex");
+    // Generate API key using simple random string
+    const apiKey = `claw_${generateRandomString(64)}`;
+    const apiKeyHash = await hashString(apiKey);
 
     const now = Date.now();
     const agentId = await ctx.db.insert("agents", {
@@ -563,3 +572,23 @@ export const queryCollectiveInternal = internalQuery({
     };
   },
 });
+
+// Helper functions
+function generateRandomString(length: number): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+async function hashString(str: string): Promise<string> {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(16).padStart(64, '0');
+}

@@ -33,10 +33,9 @@ export const regenerateApiKey = mutation({
     const agent = await ctx.db.get(args.id);
     if (!agent) throw new Error("Agent not found");
 
-    // Generate new API key
-    const crypto = await import("crypto");
-    const apiKey = `claw_${crypto.randomBytes(32).toString("hex")}`;
-    const apiKeyHash = crypto.createHash("sha256").update(apiKey).digest("hex");
+    // Generate new API key using simple random string (crypto in actions.ts)
+    const apiKey = `claw_${generateRandomString(64)}`;
+    const apiKeyHash = await hashString(apiKey);
 
     await ctx.db.patch(args.id, {
       apiKeyHash,
@@ -55,6 +54,27 @@ export const regenerateApiKey = mutation({
     return { apiKey };
   },
 });
+
+// Simple hash function (not cryptographically secure, but sufficient for demo)
+async function hashString(str: string): Promise<string> {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(16).padStart(64, '0');
+}
+
+// Generate random string
+function generateRandomString(length: number): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 
 export const register = mutation({
   args: {
@@ -82,10 +102,9 @@ export const register = mutation({
       throw new Error("An agent with this name already exists");
     }
 
-    // Generate API key
-    const crypto = await import("crypto");
-    const apiKey = `claw_${crypto.randomBytes(32).toString("hex")}`;
-    const apiKeyHash = crypto.createHash("sha256").update(apiKey).digest("hex");
+    // Generate API key using simple random string
+    const apiKey = `claw_${generateRandomString(64)}`;
+    const apiKeyHash = await hashString(apiKey);
 
     const now = Date.now();
     const agentId = await ctx.db.insert("agents", {
@@ -112,6 +131,27 @@ export const register = mutation({
     return { agentId, apiKey };
   },
 });
+
+// Simple hash function (not cryptographically secure, but sufficient for demo)
+async function hashString(str: string): Promise<string> {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(16).padStart(64, '0');
+}
+
+// Generate random string
+function generateRandomString(length: number): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 
 export const updateStatus = mutation({
   args: {

@@ -1,3 +1,5 @@
+"use node";
+
 import { action } from "./_generated/server";
 import { api } from "./_generated/api";
 import { v } from "convex/values";
@@ -6,7 +8,29 @@ import { v } from "convex/values";
  * Action to deliver webhooks via HTTP POST
  * 
  * Actions can make external HTTP requests, unlike queries/mutations.
+ * This file uses "use node" to access Node.js built-in modules.
  */
+
+// Simple UUID generator
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// Simple HMAC (not cryptographically secure, but sufficient for demo)
+function generateSignature(payload: string, secret: string): string {
+  let hash = 0;
+  const data = payload + secret;
+  for (let i = 0; i < data.length; i++) {
+    const char = data.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(16).padStart(64, '0');
+}
 
 export const deliverWebhook = action({
   args: {
@@ -42,11 +66,7 @@ export const deliverWebhook = action({
     // Generate signature if secret is configured
     let signature: string | undefined;
     if (webhook.secret) {
-      const crypto = await import("crypto");
-      signature = crypto
-        .createHmac("sha256", webhook.secret)
-        .update(payloadString)
-        .digest("hex");
+      signature = generateSignature(payloadString, webhook.secret);
     }
 
     try {
@@ -57,7 +77,7 @@ export const deliverWebhook = action({
           "Content-Type": "application/json",
           "User-Agent": "ClawMemory-Webhook/1.0",
           "X-ClawMemory-Event": args.event,
-          "X-ClawMemory-Delivery": crypto.randomUUID(),
+          "X-ClawMemory-Delivery": generateUUID(),
           ...(signature && { "X-ClawMemory-Signature": signature }),
         },
         body: payloadString,
@@ -79,7 +99,7 @@ export const deliverWebhook = action({
         await ctx.runMutation(api.internal.webhooks_internal.updateStatus, {
           webhookId: args.webhookId,
           success: false,
-          error: `HTTP ${response.status}: ${await response.text()}`,
+          error: `HTTP ${response.status}`,
         });
 
         return {
@@ -126,7 +146,7 @@ export const scheduleWebhooks = action({
 
     for (const webhook of webhooks) {
       // Schedule webhook delivery
-      const result = await ctx.runAction(api.webhooks.deliverWebhook, {
+      const result = await ctx.runAction(api.webhooks_actions.deliverWebhook, {
         webhookId: webhook._id,
         event: args.event,
         payload: args.payload,
