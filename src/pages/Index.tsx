@@ -1,17 +1,21 @@
-import { Brain, Sparkles, Network, Zap, Bot, Database, GitBranch, Activity, Plus } from "lucide-react";
+import { Brain, Sparkles, Network, Zap, Bot, Database, GitBranch, Activity, Plus, LayoutDashboard, Search, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NeuralBackground } from "@/components/NeuralBackground";
 import { MemoryCard } from "@/components/MemoryCard";
 import { MetricCard } from "@/components/MetricCard";
 import { AgentNode } from "@/components/AgentNode";
-import { SearchInput } from "@/components/SearchInput";
+import { MemorySearch } from "@/components/MemorySearch";
 import { NetworkVisualization } from "@/components/NetworkVisualization";
 import { LiveFeed } from "@/components/LiveFeed";
 import { HeroMascot } from "@/components/HeroMascot";
 import { CreateMemoryDialog } from "@/components/CreateMemoryDialog";
 import { RegisterAgentDialog } from "@/components/RegisterAgentDialog";
+import { MemoryDetailDialog } from "@/components/MemoryDetailDialog";
+import { MemoryAnalytics } from "@/components/MemoryAnalytics";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { Id } from "../../convex/_generated/dataModel";
 import { useState, useEffect } from "react";
 
 function formatNumber(n: number): string {
@@ -24,6 +28,8 @@ const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [memoryDialogOpen, setMemoryDialogOpen] = useState(false);
   const [agentDialogOpen, setAgentDialogOpen] = useState(false);
+  const [selectedMemoryId, setSelectedMemoryId] = useState<Id<"memories"> | null>(null);
+  const [activeTab, setActiveTab] = useState("overview");
 
   const stats = useQuery(api.stats.get);
   const memories = useQuery(
@@ -119,14 +125,20 @@ const Index = () => {
           </div>
 
           {/* Search */}
-          <div className="max-w-xl mx-auto animate-fade-in-up delay-500">
-            <SearchInput onSearch={setSearchQuery} />
+          <div className="max-w-2xl mx-auto animate-fade-in-up delay-500">
+            <MemorySearch 
+              onSearch={(filters) => {
+                setSearchQuery(filters.query);
+                // Additional filters would be applied here
+              }}
+              agents={agents?.map(a => ({ _id: a._id, name: a.name })) || []}
+            />
           </div>
         </div>
       </section>
 
       {/* Metrics Section */}
-      <section className="px-6 pb-16">
+      <section className="px-6 pb-8">
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <MetricCard
@@ -165,98 +177,188 @@ const Index = () => {
         </div>
       </section>
 
-      {/* Main Content Grid */}
+      {/* Main Content Tabs */}
       <section className="px-6 pb-16">
         <div className="max-w-6xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Memory Feed */}
-            <div className="lg:col-span-2 space-y-4">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-xl font-semibold flex items-center gap-2">
-                  <Database className="w-5 h-5 text-primary" />
-                  {searchQuery ? `Search: "${searchQuery}"` : "Recent Memories"}
-                </h2>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground"
-                  onClick={() => setMemoryDialogOpen(true)}
-                >
-                  <Plus className="w-4 h-4 mr-1" />
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+            <TabsList className="glass-card border-border/50 w-full justify-start">
+              <TabsTrigger value="overview" className="flex items-center gap-2">
+                <LayoutDashboard className="w-4 h-4" />
+                Overview
+              </TabsTrigger>
+              <TabsTrigger value="memories" className="flex items-center gap-2">
+                <Database className="w-4 h-4" />
+                Memories
+              </TabsTrigger>
+              <TabsTrigger value="agents" className="flex items-center gap-2">
+                <Bot className="w-4 h-4" />
+                Agents
+              </TabsTrigger>
+              <TabsTrigger value="analytics" className="flex items-center gap-2">
+                <BarChart3 className="w-4 h-4" />
+                Analytics
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="overview" className="space-y-6">
+              {/* Main Content Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Memory Feed */}
+                <div className="lg:col-span-2 space-y-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h2 className="text-xl font-semibold flex items-center gap-2">
+                      <Database className="w-5 h-5 text-primary" />
+                      {searchQuery ? `Search: "${searchQuery}"` : "Recent Memories"}
+                    </h2>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground"
+                      onClick={() => setMemoryDialogOpen(true)}
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add Memory
+                    </Button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {memories === undefined ? (
+                      <div className="glass-card p-8 text-center text-muted-foreground">
+                        Loading memories...
+                      </div>
+                    ) : memories.length === 0 ? (
+                      <div className="glass-card p-8 text-center text-muted-foreground">
+                        {searchQuery ? "No memories match your search." : "No memories yet. Store the first one!"}
+                      </div>
+                    ) : (
+                      memories.map((memory) => (
+                        <div 
+                          key={memory._id} 
+                          onClick={() => setSelectedMemoryId(memory._id)}
+                          className="cursor-pointer"
+                        >
+                          <MemoryCard memory={memory} />
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Sidebar */}
+                <div className="space-y-6">
+                  {/* Live Feed */}
+                  <LiveFeed />
+
+                  {/* Network Visualization */}
+                  <div className="glass-card p-5">
+                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
+                      <Network className="w-4 h-4 text-primary" />
+                      Memory Network
+                    </h3>
+                    <NetworkVisualization className="h-[250px]" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Agent Network Section */}
+              <div className="glass-card p-8">
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h2 className="text-xl font-semibold flex items-center gap-2">
+                      <Zap className="w-5 h-5 text-secondary" />
+                      Connected Agents
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Active participants in the collective consciousness
+                    </p>
+                  </div>
+                  <Button variant="neural" size="sm" onClick={() => setAgentDialogOpen(true)}>
+                    + Add Agent
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+                  {agents === undefined ? (
+                    <div className="col-span-4 text-center text-muted-foreground py-8">
+                      Loading agents...
+                    </div>
+                  ) : agents.length === 0 ? (
+                    <div className="col-span-4 text-center text-muted-foreground py-8">
+                      No agents connected yet.
+                    </div>
+                  ) : (
+                    agents.map((agent) => (
+                      <AgentNode key={agent._id} agent={agent} />
+                    ))
+                  )}
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="memories" className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-semibold">All Memories</h2>
+                <Button onClick={() => setMemoryDialogOpen(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
                   Add Memory
                 </Button>
               </div>
-
-              <div className="space-y-4">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {memories === undefined ? (
-                  <div className="glass-card p-8 text-center text-muted-foreground">
+                  <div className="col-span-full glass-card p-8 text-center text-muted-foreground">
                     Loading memories...
                   </div>
                 ) : memories.length === 0 ? (
-                  <div className="glass-card p-8 text-center text-muted-foreground">
-                    {searchQuery ? "No memories match your search." : "No memories yet. Store the first one!"}
+                  <div className="col-span-full glass-card p-8 text-center text-muted-foreground">
+                    No memories found.
                   </div>
                 ) : (
                   memories.map((memory) => (
-                    <MemoryCard key={memory._id} memory={memory} />
+                    <div 
+                      key={memory._id} 
+                      onClick={() => setSelectedMemoryId(memory._id)}
+                      className="cursor-pointer"
+                    >
+                      <MemoryCard memory={memory} />
+                    </div>
                   ))
                 )}
               </div>
-            </div>
+            </TabsContent>
 
-            {/* Sidebar */}
-            <div className="space-y-6">
-              {/* Live Feed */}
-              <LiveFeed />
-
-              {/* Network Visualization */}
-              <div className="glass-card p-5">
-                <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                  <Network className="w-4 h-4 text-primary" />
-                  Memory Network
-                </h3>
-                <NetworkVisualization className="h-[250px]" />
+            <TabsContent value="agents" className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-semibold">Connected Agents</h2>
+                <Button onClick={() => setAgentDialogOpen(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Agent
+                </Button>
               </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
-      {/* Agent Network Section */}
-      <section className="px-6 pb-20">
-        <div className="max-w-6xl mx-auto">
-          <div className="glass-card p-8">
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h2 className="text-xl font-semibold flex items-center gap-2">
-                  <Zap className="w-5 h-5 text-secondary" />
-                  Connected Agents
-                </h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Active participants in the collective consciousness
-                </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {agents === undefined ? (
+                  <div className="col-span-full glass-card p-8 text-center text-muted-foreground">
+                    Loading agents...
+                  </div>
+                ) : agents.length === 0 ? (
+                  <div className="col-span-full glass-card p-8 text-center text-muted-foreground">
+                    No agents connected yet.
+                  </div>
+                ) : (
+                  agents.map((agent) => (
+                    <div key={agent._id} className="glass-card p-6">
+                      <AgentNode agent={agent} />
+                    </div>
+                  ))
+                )}
               </div>
-              <Button variant="neural" size="sm" onClick={() => setAgentDialogOpen(true)}>
-                + Add Agent
-              </Button>
-            </div>
+            </TabsContent>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
-              {agents === undefined ? (
-                <div className="col-span-4 text-center text-muted-foreground py-8">
-                  Loading agents...
-                </div>
-              ) : agents.length === 0 ? (
-                <div className="col-span-4 text-center text-muted-foreground py-8">
-                  No agents connected yet.
-                </div>
-              ) : (
-                agents.map((agent) => (
-                  <AgentNode key={agent._id} agent={agent} />
-                ))
-              )}
-            </div>
-          </div>
+            <TabsContent value="analytics">
+              <MemoryAnalytics />
+            </TabsContent>
+          </Tabs>
         </div>
       </section>
 
@@ -328,6 +430,11 @@ const Index = () => {
       {/* Dialogs */}
       <CreateMemoryDialog open={memoryDialogOpen} onOpenChange={setMemoryDialogOpen} />
       <RegisterAgentDialog open={agentDialogOpen} onOpenChange={setAgentDialogOpen} />
+      <MemoryDetailDialog 
+        memoryId={selectedMemoryId} 
+        open={!!selectedMemoryId} 
+        onOpenChange={(open) => !open && setSelectedMemoryId(null)} 
+      />
     </div>
   );
 };
