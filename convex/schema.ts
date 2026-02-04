@@ -15,6 +15,9 @@ export default defineSchema({
     quality: v.number(),
     tags: v.optional(v.array(v.string())),
     createdAt: v.number(),
+    // New fields for semantic search
+    embedding: v.optional(v.array(v.number())),
+    summary: v.optional(v.string()),
   })
     .index("by_agent", ["agentId"])
     .index("by_type", ["type"])
@@ -35,9 +38,15 @@ export default defineSchema({
     memoriesCount: v.number(),
     lastActive: v.number(),
     createdAt: v.number(),
+    // API authentication
+    apiKey: v.optional(v.string()),
+    apiKeyHash: v.optional(v.string()),
+    permissions: v.optional(v.array(v.string())), // "read", "write", "admin"
+    metadata: v.optional(v.record(v.string(), v.any())),
   })
     .index("by_status", ["status"])
-    .index("by_name", ["name"]),
+    .index("by_name", ["name"])
+    .index("by_api_key", ["apiKeyHash"]),
 
   connections: defineTable({
     sourceMemoryId: v.id("memories"),
@@ -45,6 +54,9 @@ export default defineSchema({
     strength: v.number(),
     label: v.optional(v.string()),
     createdAt: v.number(),
+    // New fields for semantic connections
+    similarityScore: v.optional(v.number()),
+    connectionType: v.optional(v.string()), // "semantic", "temporal", "agent"
   })
     .index("by_source", ["sourceMemoryId"])
     .index("by_target", ["targetMemoryId"]),
@@ -55,5 +67,20 @@ export default defineSchema({
     action: v.string(),
     target: v.string(),
     createdAt: v.number(),
+    // New fields for API tracking
+    source: v.optional(v.string()), // "api", "web", "system"
+    ipAddress: v.optional(v.string()),
+    userAgent: v.optional(v.string()),
   }).index("by_created", ["createdAt"]),
+
+  // New table for API rate limiting
+  apiUsage: defineTable({
+    agentId: v.id("agents"),
+    date: v.string(), // YYYY-MM-DD format
+    requests: v.number(),
+    tokensUsed: v.optional(v.number()),
+    lastRequestAt: v.number(),
+  })
+    .index("by_agent_date", ["agentId", "date"])
+    .index("by_date", ["date"]),
 });

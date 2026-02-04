@@ -1,4 +1,4 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
 export const list = query({
@@ -11,6 +11,48 @@ export const get = query({
   args: { id: v.id("agents") },
   handler: async (ctx, args) => {
     return ctx.db.get(args.id);
+  },
+});
+
+export const getApiKey = query({
+  args: { id: v.id("agents") },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db.get(args.id);
+    if (!agent) throw new Error("Agent not found");
+    // Only return if API key exists (shown once at creation)
+    return { 
+      hasApiKey: !!agent.apiKeyHash,
+      createdAt: agent.createdAt,
+    };
+  },
+});
+
+export const regenerateApiKey = mutation({
+  args: { id: v.id("agents") },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db.get(args.id);
+    if (!agent) throw new Error("Agent not found");
+
+    // Generate new API key
+    const crypto = await import("crypto");
+    const apiKey = `claw_${crypto.randomBytes(32).toString("hex")}`;
+    const apiKeyHash = crypto.createHash("sha256").update(apiKey).digest("hex");
+
+    await ctx.db.patch(args.id, {
+      apiKeyHash,
+      lastActive: Date.now(),
+    });
+
+    // Log activity
+    await ctx.db.insert("activities", {
+      agentId: args.id,
+      agentName: agent.name,
+      action: "regenerated API key",
+      target: "",
+      createdAt: Date.now(),
+    });
+
+    return { apiKey };
   },
 });
 
@@ -40,14 +82,21 @@ export const register = mutation({
       throw new Error("An agent with this name already exists");
     }
 
+    // Generate API key
+    const crypto = await import("crypto");
+    const apiKey = `claw_${crypto.randomBytes(32).toString("hex")}`;
+    const apiKeyHash = crypto.createHash("sha256").update(apiKey).digest("hex");
+
     const now = Date.now();
     const agentId = await ctx.db.insert("agents", {
-      name: args.name,
+      name: args.name.trim(),
       status: "active",
       description: args.description,
       memoriesCount: 0,
       lastActive: now,
       createdAt: now,
+      apiKeyHash,
+      permissions: ["read", "write"],
     });
 
     // Log activity
@@ -59,7 +108,8 @@ export const register = mutation({
       createdAt: now,
     });
 
-    return agentId;
+    // Return agentId AND the API key (shown only once!)
+    return { agentId, apiKey };
   },
 });
 
