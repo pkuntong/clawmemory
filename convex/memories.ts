@@ -188,6 +188,58 @@ export const store = mutation({
   },
 });
 
+export const bulkStore = mutation({
+  args: {
+    memories: v.array(v.object({
+      content: v.string(),
+      type: v.union(
+        v.literal("insight"),
+        v.literal("experience"),
+        v.literal("learning"),
+        v.literal("pattern")
+      ),
+      quality: v.optional(v.number()),
+      tags: v.optional(v.array(v.string())),
+      agentName: v.optional(v.string()),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const results = [];
+    const errors = [];
+
+    for (let i = 0; i < args.memories.length; i++) {
+      const mem = args.memories[i];
+      try {
+        // For import, we'd need to handle agent lookup/creation
+        // This is simplified - in production, handle agent mapping properly
+        const agentId = await ctx.db.insert("agents", {
+          name: mem.agentName || "Imported Agent",
+          status: "active",
+          memoriesCount: 0,
+          lastActive: Date.now(),
+          createdAt: Date.now(),
+        });
+
+        const memoryId = await ctx.db.insert("memories", {
+          agentId,
+          agentName: mem.agentName || "Imported Agent",
+          type: mem.type,
+          content: mem.content,
+          quality: mem.quality || 3,
+          tags: mem.tags,
+          createdAt: Date.now(),
+        });
+
+        results.push(memoryId);
+      } catch (error) {
+        errors.push({ index: i, error: String(error) });
+      }
+    }
+
+    return { stored: results.length, errors };
+  },
+});
+
 export const remove = mutation({
   args: { id: v.id("memories") },
   handler: async (ctx, args) => {
