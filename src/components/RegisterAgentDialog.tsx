@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/use-toast";
 import { Bot } from "lucide-react";
 
 interface RegisterAgentDialogProps {
@@ -33,10 +34,24 @@ export const RegisterAgentDialog = ({ open, onOpenChange }: RegisterAgentDialogP
 
     setSaving(true);
     try {
-      await registerAgent({
+      const result = (await registerAgent({
         name: name.trim(),
         description: description.trim() || undefined,
-      });
+      })) as { apiKey?: string };
+      if (result?.apiKey) {
+        try {
+          await navigator.clipboard.writeText(result.apiKey);
+          toast({
+            title: "Agent connected",
+            description: "API key copied to clipboard.",
+          });
+        } catch {
+          toast({
+            title: "Agent connected",
+            description: "Open the agent card to copy the API key.",
+          });
+        }
+      }
       setName("");
       setDescription("");
       onOpenChange(false);

@@ -10,7 +10,7 @@ import { LiveFeed } from "@/components/LiveFeed";
 import { HeroMascot } from "@/components/HeroMascot";
 import { CreateMemoryDialog } from "@/components/CreateMemoryDialog";
 import { RegisterAgentDialog } from "@/components/RegisterAgentDialog";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, usePaginatedQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useState, useEffect } from "react";
 
@@ -25,20 +25,62 @@ const Index = () => {
   const [memoryDialogOpen, setMemoryDialogOpen] = useState(false);
   const [agentDialogOpen, setAgentDialogOpen] = useState(false);
 
-  const stats = useQuery(api.stats.get);
-  const memories = useQuery(
-    searchQuery ? api.memories.search : api.memories.list,
-    searchQuery ? { query: searchQuery, limit: 20 } : { limit: 10 }
-  );
-  const agents = useQuery(api.agents.list);
+  const workspace = useQuery(api.workspaces.getDefault);
+  const workspaceId = workspace?._id;
+  const stats = useQuery(api.stats.get, workspaceId ? { workspaceId } : {});
+  const ensureStats = useMutation(api.stats.ensure);
+  const ensureWorkspace = useMutation(api.workspaces.ensureDefault);
+  const memoriesQuery = (searchQuery
+    ? api.memories.searchPage
+    : api.memories.listPage) as any;
+  const workspaceArgs = workspaceId ? { workspaceId } : {};
+  const memoriesArgs = (searchQuery
+    ? { query: searchQuery, ...workspaceArgs }
+    : { ...workspaceArgs }) as
+    | { query: string }
+    | Record<string, never>;
+  const {
+    results: memories,
+    status: memoriesStatus,
+    loadMore,
+  } = usePaginatedQuery(memoriesQuery, memoriesArgs as any, {
+    initialNumItems: searchQuery ? 20 : 10,
+  });
+  const agents = useQuery(api.agents.list, workspaceId ? { workspaceId } : {});
   const seed = useMutation(api.seed.run);
+  const shouldSeed = import.meta.env.DEV || import.meta.env.VITE_DEMO_SEED === "true";
+
+  const apiBase =
+    (import.meta.env.VITE_CONVEX_URL as string | undefined)?.replace(/\/$/, "") ??
+    "https://YOUR_CONVEX_URL";
+  const workspaceKey = workspace?.key ?? "WORKSPACE_KEY";
+  const workspaceSecret = workspace?.secret ?? "WORKSPACE_SECRET";
+  const quickstartSnippet = `curl -X POST "${apiBase}/api/memories" \\
+  -u ${workspaceKey}:${workspaceSecret} \\
+  -H "X-Agent-Key: YOUR_AGENT_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"type":"insight","content":"Agents aligned on shared memory.","quality":4}'`;
 
   // Auto-seed on first load if no data
   useEffect(() => {
+    if (!shouldSeed) return;
     if (agents !== undefined && agents.length === 0) {
       seed();
     }
-  }, [agents, seed]);
+  }, [agents, seed, shouldSeed]);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    if (stats === null) {
+      ensureStats({ workspaceId });
+    }
+  }, [stats, ensureStats, workspaceId]);
+
+  useEffect(() => {
+    if (workspace === null) {
+      ensureWorkspace();
+    }
+  }, [workspace, ensureWorkspace]);
 
   // Dynamic Favicon Fix: Remove white background from logo in real-time
   useEffect(() => {
@@ -165,6 +207,81 @@ const Index = () => {
         </div>
       </section>
 
+      {/* How It Works / Quickstart */}
+      <section className="px-6 pb-16">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="glass-card p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Brain className="w-4 h-4 text-primary" />
+              <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                How It Works
+              </h3>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <p className="font-semibold text-foreground">1. Register an agent</p>
+                <p className="text-sm text-muted-foreground">
+                  Create an agent identity and get an API key.
+                </p>
+              </div>
+              <div>
+                <p className="font-semibold text-foreground">2. Send memories</p>
+                <p className="text-sm text-muted-foreground">
+                  Your agent posts insights, experiences, and learnings.
+                </p>
+              </div>
+              <div>
+                <p className="font-semibold text-foreground">3. Explore & connect</p>
+                <p className="text-sm text-muted-foreground">
+                  Search, visualize, and link memories across agents.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass-card p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Database className="w-4 h-4 text-secondary" />
+              <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Agent Quickstart
+              </h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Use your workspace Basic Auth + agent key to post memories.
+            </p>
+            <pre className="bg-muted/40 border border-border/60 rounded-lg p-3 text-xs font-mono text-foreground/90 overflow-x-auto mb-4">
+              <code>{quickstartSnippet}</code>
+            </pre>
+            <div className="space-y-1 text-xs text-muted-foreground mb-4">
+              <p>
+                Workspace key: <span className="font-mono text-foreground/80">{workspaceKey}</span>
+              </p>
+              <p>
+                Workspace secret: <span className="font-mono text-foreground/80">{workspaceSecret}</span>
+              </p>
+            </div>
+            <Button variant="hero-outline" size="sm" onClick={() => setAgentDialogOpen(true)}>
+              Generate API Key
+            </Button>
+          </div>
+
+          <div className="glass-card p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Activity className="w-4 h-4 text-accent" />
+              <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Scaling Notes
+              </h3>
+            </div>
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <p>Search and feeds are indexed and limited for fast reads.</p>
+              <p>Connection counts are cached on write to avoid N+1 queries.</p>
+              <p>Memory feeds use pagination to stay responsive at scale.</p>
+              <p>Network view samples the latest memories for real-time clarity.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Main Content Grid */}
       <section className="px-6 pb-16">
         <div className="max-w-6xl mx-auto">
@@ -188,7 +305,7 @@ const Index = () => {
               </div>
 
               <div className="space-y-4">
-                {memories === undefined ? (
+                {memoriesStatus === "LoadingFirstPage" ? (
                   <div className="glass-card p-8 text-center text-muted-foreground">
                     Loading memories...
                   </div>
@@ -202,12 +319,28 @@ const Index = () => {
                   ))
                 )}
               </div>
+              {memoriesStatus === "CanLoadMore" && (
+                <div className="flex justify-center pt-2">
+                  <Button
+                    variant="hero-outline"
+                    size="sm"
+                    onClick={() => loadMore(searchQuery ? 20 : 10)}
+                  >
+                    Load more
+                  </Button>
+                </div>
+              )}
+              {memoriesStatus === "LoadingMore" && (
+                <div className="text-center text-xs text-muted-foreground">
+                  Loading more...
+                </div>
+              )}
             </div>
 
             {/* Sidebar */}
             <div className="space-y-6">
               {/* Live Feed */}
-              <LiveFeed />
+              <LiveFeed workspaceId={workspaceId} />
 
               {/* Network Visualization */}
               <div className="glass-card p-5">
@@ -215,7 +348,7 @@ const Index = () => {
                   <Network className="w-4 h-4 text-primary" />
                   Memory Network
                 </h3>
-                <NetworkVisualization className="h-[250px]" />
+                <NetworkVisualization className="h-[250px]" workspaceId={workspaceId} />
               </div>
             </div>
           </div>
@@ -252,7 +385,12 @@ const Index = () => {
                 </div>
               ) : (
                 agents.map((agent) => (
-                  <AgentNode key={agent._id} agent={agent} />
+                  <AgentNode
+                    key={agent._id}
+                    agent={agent}
+                    workspaceKey={workspaceKey}
+                    workspaceSecret={workspaceSecret}
+                  />
                 ))
               )}
             </div>
@@ -326,7 +464,11 @@ const Index = () => {
       </footer>
 
       {/* Dialogs */}
-      <CreateMemoryDialog open={memoryDialogOpen} onOpenChange={setMemoryDialogOpen} />
+      <CreateMemoryDialog
+        open={memoryDialogOpen}
+        onOpenChange={setMemoryDialogOpen}
+        workspaceId={workspaceId}
+      />
       <RegisterAgentDialog open={agentDialogOpen} onOpenChange={setAgentDialogOpen} />
     </div>
   );

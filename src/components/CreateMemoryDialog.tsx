@@ -25,16 +25,21 @@ import { Brain } from "lucide-react";
 interface CreateMemoryDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  workspaceId?: string;
 }
 
-export const CreateMemoryDialog = ({ open, onOpenChange }: CreateMemoryDialogProps) => {
+export const CreateMemoryDialog = ({
+  open,
+  onOpenChange,
+  workspaceId,
+}: CreateMemoryDialogProps) => {
   const [agentId, setAgentId] = useState<string>("");
   const [type, setType] = useState<string>("insight");
   const [content, setContent] = useState("");
   const [quality, setQuality] = useState(4);
   const [saving, setSaving] = useState(false);
 
-  const agents = useQuery(api.agents.list);
+  const agents = useQuery(api.agents.list, { workspaceId });
   const storeMemory = useMutation(api.memories.store);
 
   const handleSubmit = async (e: React.FormEvent) => {

@@ -1,45 +1,114 @@
-import { query } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
+import { v } from "convex/values";
+import { dateKeyFromTimestamp, getDailyMemoryCount, getStatsDoc } from "./helpers";
 
 export const get = query({
-  handler: async (ctx) => {
-    const allMemories = await ctx.db.query("memories").collect();
-    const allAgents = await ctx.db.query("agents").collect();
-    const allConnections = await ctx.db.query("connections").collect();
+  args: { workspaceId: v.optional(v.id("workspaces")) },
+  handler: async (ctx, args) => {
+    const stats = await getStatsDoc(ctx, args.workspaceId);
+    if (!stats) {
+      return null;
+    }
 
-    const activeAgents = allAgents.filter((a) => a.status === "active");
+    const todayKey = dateKeyFromTimestamp(Date.now());
+    const daily = await getDailyMemoryCount(ctx, todayKey, stats.workspaceId);
+    const memoriesToday = daily?.count ?? 0;
 
-    // Memories created in the last 24 hours
-    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-    const memoriesToday = allMemories.filter((m) => m.createdAt > oneDayAgo);
-
-    // Average connections per memory
     const avgConnections =
-      allMemories.length > 0
-        ? (allConnections.length * 2) / allMemories.length
+      stats.totalMemories > 0
+        ? (stats.totalConnections * 2) / stats.totalMemories
         : 0;
 
-    // Last activity timestamp
-    const lastActivity = await ctx.db
-      .query("activities")
-      .order("desc")
-      .first();
-
-    const lastSyncAgo = lastActivity
-      ? Math.round((Date.now() - lastActivity.createdAt) / 1000)
-      : null;
+    const lastSyncSeconds =
+      stats.lastActivityAt != null
+        ? Math.round((Date.now() - stats.lastActivityAt) / 1000)
+        : null;
 
     return {
-      totalMemories: allMemories.length,
-      memoriesToday: memoriesToday.length,
-      totalAgents: allAgents.length,
-      activeAgents: activeAgents.length,
+      totalMemories: stats.totalMemories,
+      memoriesToday,
+      totalAgents: stats.totalAgents,
+      activeAgents: stats.activeAgents,
       uptimePercent:
-        allAgents.length > 0
-          ? Math.round((activeAgents.length / allAgents.length) * 100)
+        stats.totalAgents > 0
+          ? Math.round((stats.activeAgents / stats.totalAgents) * 100)
           : 0,
-      totalConnections: allConnections.length,
+      totalConnections: stats.totalConnections,
       avgConnectionsPerMemory: Math.round(avgConnections * 10) / 10,
-      lastSyncSeconds: lastSyncAgo,
+      lastSyncSeconds,
     };
+  },
+});
+
+export const ensure = mutation({
+  args: { workspaceId: v.optional(v.id("workspaces")) },
+  handler: async (ctx, args) => {
+    const existing = await getStatsDoc(ctx, args.workspaceId);
+    if (existing) {
+      return { status: "ok" as const };
+    }
+
+    const now = Date.now();
+    let allMemories = await ctx.db.query("memories").collect();
+    let allAgents = await ctx.db.query("agents").collect();
+    let allConnections = await ctx.db.query("connections").collect();
+    let allActivities = await ctx.db.query("activities").collect();
+
+    if (args.workspaceId) {
+      allMemories = await ctx.db
+        .query("memories")
+        .withIndex("by_workspace_created", (q) =>
+          q.eq("workspaceId", args.workspaceId!)
+        )
+        .collect();
+      allAgents = await ctx.db
+        .query("agents")
+        .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId!))
+        .collect();
+      allConnections = await ctx.db
+        .query("connections")
+        .withIndex("by_workspace_created", (q) =>
+          q.eq("workspaceId", args.workspaceId!)
+        )
+        .collect();
+      allActivities = await ctx.db
+        .query("activities")
+        .withIndex("by_workspace_created", (q) =>
+          q.eq("workspaceId", args.workspaceId!)
+        )
+        .collect();
+    }
+
+    const activeAgents = allAgents.filter((a) => a.status === "active").length;
+
+    const lastActivity = allActivities
+      .sort((a, b) => b.createdAt - a.createdAt)[0];
+
+    const statsId = await ctx.db.insert("stats", {
+      key: args.workspaceId ? `ws:${args.workspaceId}` : "global",
+      workspaceId: args.workspaceId ?? undefined,
+      totalMemories: allMemories.length,
+      totalAgents: allAgents.length,
+      activeAgents,
+      totalConnections: allConnections.length,
+      lastActivityAt: lastActivity?.createdAt ?? now,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const todayKey = dateKeyFromTimestamp(now);
+    const memoriesToday = allMemories.filter(
+      (m) => dateKeyFromTimestamp(m.createdAt) === todayKey
+    ).length;
+
+    await ctx.db.insert("dailyMemoryCounts", {
+      workspaceId: args.workspaceId ?? undefined,
+      date: todayKey,
+      count: memoriesToday,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return { status: "initialized" as const, statsId };
   },
 });

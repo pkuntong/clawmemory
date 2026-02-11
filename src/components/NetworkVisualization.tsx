@@ -29,12 +29,18 @@ function hashPosition(id: string, index: number, total: number): { x: number; y:
   return { x: Math.max(0.1, Math.min(0.9, x)), y: Math.max(0.1, Math.min(0.9, y)) };
 }
 
-export const NetworkVisualization = ({ className }: { className?: string }) => {
+export const NetworkVisualization = ({
+  className,
+  workspaceId,
+}: {
+  className?: string;
+  workspaceId?: string;
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
 
-  const memories = useQuery(api.memories.list, { limit: 12 });
-  const connections = useQuery(api.connections.list, { limit: 50 });
+  const memories = useQuery(api.memories.list, { limit: 12, workspaceId });
+  const connections = useQuery(api.connections.list, { limit: 50, workspaceId });
 
   const { nodes, width, height } = useMemo(() => {
     const w = containerRef.current?.offsetWidth ?? 400;

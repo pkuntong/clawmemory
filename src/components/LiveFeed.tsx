@@ -12,8 +12,17 @@ function formatTime(timestamp: number): string {
   });
 }
 
-export const LiveFeed = ({ className }: { className?: string }) => {
-  const activities = useQuery(api.activities.list, { limit: 15 });
+export const LiveFeed = ({
+  className,
+  workspaceId,
+}: {
+  className?: string;
+  workspaceId?: string;
+}) => {
+  const activities = useQuery(api.activities.list, {
+    limit: 15,
+    workspaceId,
+  });
 
   return (
     <div className={cn("glass-card p-5", className)}>

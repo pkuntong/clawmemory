@@ -1,13 +1,20 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { getOrCreateStats } from "./helpers";
 
 export const list = query({
-  args: { limit: v.optional(v.number()) },
+  args: { limit: v.optional(v.number()), workspaceId: v.optional(v.id("workspaces")) },
   handler: async (ctx, args) => {
-    const connections = await ctx.db
-      .query("connections")
-      .order("desc")
-      .take(args.limit ?? 100);
+    let query = ctx.db.query("connections").order("desc");
+    if (args.workspaceId) {
+      query = ctx.db
+        .query("connections")
+        .withIndex("by_workspace_created", (q) =>
+          q.eq("workspaceId", args.workspaceId!)
+        )
+        .order("desc");
+    }
+    const connections = await query.take(args.limit ?? 100);
 
     // Enrich with memory info for visualization
     const enriched = await Promise.all(
@@ -65,21 +72,46 @@ export const create = mutation({
     const source = await ctx.db.get(args.sourceMemoryId);
     const target = await ctx.db.get(args.targetMemoryId);
     if (!source || !target) throw new Error("Memory not found");
+    if (
+      source.workspaceId &&
+      target.workspaceId &&
+      source.workspaceId !== target.workspaceId
+    ) {
+      throw new Error("Cannot connect memories across workspaces");
+    }
 
+    const now = Date.now();
+    const workspaceId = source.workspaceId ?? target.workspaceId;
     const connId = await ctx.db.insert("connections", {
+      workspaceId,
       sourceMemoryId: args.sourceMemoryId,
       targetMemoryId: args.targetMemoryId,
       strength: args.strength ?? 1,
       label: args.label,
-      createdAt: Date.now(),
+      createdAt: now,
+    });
+
+    await ctx.db.patch(args.sourceMemoryId, {
+      connectionCount: (source.connectionCount ?? 0) + 1,
+    });
+    await ctx.db.patch(args.targetMemoryId, {
+      connectionCount: (target.connectionCount ?? 0) + 1,
+    });
+
+    const stats = await getOrCreateStats(ctx, workspaceId);
+    await ctx.db.patch(stats._id, {
+      totalConnections: stats.totalConnections + 1,
+      updatedAt: now,
+      lastActivityAt: now,
     });
 
     // Log activity
     await ctx.db.insert("activities", {
+      workspaceId,
       agentName: source.agentName,
       action: "connected",
       target: `"${source.content.slice(0, 30)}..." ↔ "${target.content.slice(0, 30)}..."`,
-      createdAt: Date.now(),
+      createdAt: now,
     });
 
     return connId;
@@ -89,6 +121,28 @@ export const create = mutation({
 export const remove = mutation({
   args: { id: v.id("connections") },
   handler: async (ctx, args) => {
+    const connection = await ctx.db.get(args.id);
+    if (!connection) return;
+
+    const source = await ctx.db.get(connection.sourceMemoryId);
+    const target = await ctx.db.get(connection.targetMemoryId);
+    if (source) {
+      await ctx.db.patch(connection.sourceMemoryId, {
+        connectionCount: Math.max(0, (source.connectionCount ?? 0) - 1),
+      });
+    }
+    if (target) {
+      await ctx.db.patch(connection.targetMemoryId, {
+        connectionCount: Math.max(0, (target.connectionCount ?? 0) - 1),
+      });
+    }
+
+    const stats = await getOrCreateStats(ctx, connection.workspaceId);
+    await ctx.db.patch(stats._id, {
+      totalConnections: Math.max(0, stats.totalConnections - 1),
+      updatedAt: Date.now(),
+    });
+
     await ctx.db.delete(args.id);
   },
 });
