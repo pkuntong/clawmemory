@@ -55,6 +55,11 @@ model StoreConfig {
   labelText         String   @default("Estimated delivery")
   countdownText     String   @default("Order within")
   countdownSuffix   String   @default("to get it by")
+  abTestEnabled     Boolean  @default(false)
+  abTestSplit       Int      @default(50)
+  labelTextVariantB String   @default("")
+  countdownTextVariantB String @default("")
+  countdownSuffixVariantB String @default("")
   iconStyle         String   @default("truck") // truck, package, clock, none
   fontSize          Int      @default(14)
   textColor         String   @default("#333333")

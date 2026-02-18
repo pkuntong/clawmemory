@@ -54,6 +54,11 @@ export async function upsertStoreConfig(
     labelText: string;
     countdownText: string;
     countdownSuffix: string;
+    abTestEnabled: boolean;
+    abTestSplit: number;
+    labelTextVariantB: string;
+    countdownTextVariantB: string;
+    countdownSuffixVariantB: string;
     iconStyle: string;
     fontSize: number;
     textColor: string;

@@ -47,6 +47,8 @@ const DASHBOARD_METRIC_KEYS = [
   "settings_save_failed",
   "billing_upgrade_requested",
   "dashboard_page_views",
+  "storefront_event_widget_impression",
+  "storefront_event_ab_variant_exposed",
 ] as const;
 
 function getActivePlan(subscriptionName: string | undefined): PlanKey {
@@ -152,6 +154,8 @@ export default function Index() {
   const settingsSaves30d = totalFor("settings_saved");
   const saveFailures30d = totalFor("settings_save_failed");
   const upgradeIntents30d = totalFor("billing_upgrade_requested");
+  const widgetImpressions30d = totalFor("storefront_event_widget_impression");
+  const abExposures30d = totalFor("storefront_event_ab_variant_exposed");
 
   const planLabel = {
     free: "Free",
@@ -167,7 +171,8 @@ export default function Index() {
         : null;
   const strongUpgradeSignal =
     (activePlan === "free" && (apiRequests30d >= 500 || settingsSaves30d >= 10)) ||
-    (activePlan === "pro" && (apiRequests30d >= 2000 || upgradeIntents30d >= 1));
+    (activePlan === "pro" &&
+      (apiRequests30d >= 2000 || widgetImpressions30d >= 500 || upgradeIntents30d >= 1));
 
   return (
     <s-page heading="Delivery Date Estimator">
@@ -199,7 +204,7 @@ export default function Index() {
         <s-section heading="Revenue Nudge">
           <s-paragraph>
             {strongUpgradeSignal
-              ? `Strong upsell signal detected from the last 30 days (${apiRequests30d} widget requests, ${settingsSaves30d} settings saves).`
+              ? `Strong upsell signal detected from the last 30 days (${apiRequests30d} widget requests, ${widgetImpressions30d} widget impressions, ${settingsSaves30d} settings saves).`
               : "Unlock higher conversion features as your traffic grows."}
           </s-paragraph>
           <s-paragraph>
@@ -258,6 +263,10 @@ export default function Index() {
               Last {analyticsSummary?.windowDays ?? 30} days:{" "}
               {analyticsSummary?.totalEvents ?? 0} tracked events.
             </s-paragraph>
+            <s-paragraph>
+              Storefront widget impressions: {widgetImpressions30d}. A/B exposures tracked:{" "}
+              {abExposures30d}.
+            </s-paragraph>
             {analyticsSummary?.lastEventAt && (
               <s-paragraph>
                 Last event: {new Date(analyticsSummary.lastEventAt).toLocaleString()}
@@ -279,10 +288,11 @@ export default function Index() {
           <>
             <s-paragraph>
               Last 30 days preview: {apiRequests30d} requests, {settingsSaves30d} settings saves,
-              {saveFailures30d} save failures.
+              {saveFailures30d} save failures, {widgetImpressions30d} widget impressions.
             </s-paragraph>
             <s-paragraph>
-              Full trend breakdown and top-event analytics are included in the Premium plan.
+              Full trend breakdown, top-event analytics, and A/B experiment reporting are included
+              in the Premium plan.
             </s-paragraph>
             <s-link href="/app/billing?src=dashboard_analytics_snapshot">
               Upgrade to Premium

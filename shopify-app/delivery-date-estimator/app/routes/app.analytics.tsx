@@ -26,6 +26,10 @@ const METRIC_KEYS = [
   "billing_downgrade_requested",
   "onboarding_step_toggled",
   "analytics_page_views",
+  "storefront_event_widget_impression",
+  "storefront_event_ab_variant_exposed",
+  "storefront_event_ab_variant_exposed_variant_a",
+  "storefront_event_ab_variant_exposed_variant_b",
 ] as const;
 
 function getActivePlan(subscriptionName: string | undefined): PlanKey {
@@ -63,6 +67,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     30,
     8,
   );
+  const abExposureSources = await getMetricTotalsByPrefix(
+    session.shop,
+    "storefront_event_ab_variant_exposed_source_",
+    30,
+    8,
+  );
   const onboarding = await getOnboardingProgress(session.shop);
   const completedSteps = [
     onboarding.themeBlockAdded,
@@ -84,6 +94,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     onboarding,
     premiumUnlocked,
     shop: session.shop,
+    abExposureSources,
     topBillingEntrySources,
     topUpgradeSources,
   };
@@ -98,6 +109,7 @@ export default function AnalyticsPage() {
     completedSteps,
     dailyMetrics,
     premiumUnlocked,
+    abExposureSources,
     topBillingEntrySources,
     topUpgradeSources,
   } = useLoaderData<typeof loader>();
@@ -110,11 +122,17 @@ export default function AnalyticsPage() {
   const settingsFailed = totalFor("settings_save_failed");
   const upgradeIntents = totalFor("billing_upgrade_requested");
   const downgradeIntents = totalFor("billing_downgrade_requested");
+  const widgetImpressions = totalFor("storefront_event_widget_impression");
+  const abExposureTotal = totalFor("storefront_event_ab_variant_exposed");
+  const abExposureVariantA = totalFor("storefront_event_ab_variant_exposed_variant_a");
+  const abExposureVariantB = totalFor("storefront_event_ab_variant_exposed_variant_b");
+  const abSplitA = abExposureTotal > 0 ? Math.round((abExposureVariantA / abExposureTotal) * 100) : 0;
+  const abSplitB = abExposureTotal > 0 ? Math.round((abExposureVariantB / abExposureTotal) * 100) : 0;
   const upgradeIntentRate =
     settingsSaved > 0 ? Math.round((upgradeIntents / settingsSaved) * 100) : 0;
   const recentRows = dailyMetrics.days.slice(-14);
   const strongPremiumSignal =
-    requests >= 1000 || settingsSaved >= 20 || upgradeIntents >= 1;
+    requests >= 1000 || settingsSaved >= 20 || upgradeIntents >= 1 || widgetImpressions >= 300;
 
   return (
     <s-page heading="Analytics">
@@ -126,6 +144,8 @@ export default function AnalyticsPage() {
           <s-list-item>API config requests: {requests}</s-list-item>
           <s-list-item>Settings saves: {settingsSaved}</s-list-item>
           <s-list-item>Settings save failures: {settingsFailed}</s-list-item>
+          <s-list-item>Widget impressions: {widgetImpressions}</s-list-item>
+          <s-list-item>A/B exposures tracked: {abExposureTotal}</s-list-item>
           <s-list-item>Upgrade intents: {upgradeIntents}</s-list-item>
           <s-list-item>Downgrade intents: {downgradeIntents}</s-list-item>
           <s-list-item>
@@ -145,7 +165,7 @@ export default function AnalyticsPage() {
           <s-paragraph>
             {strongPremiumSignal
               ? "Upgrade to Premium to identify the highest-converting settings and justify pricing decisions."
-              : "Upgrade to Premium when you are ready to optimize conversion with full data visibility."}
+              : "Upgrade to Premium when you are ready to optimize conversion with live storefront A/B tests and full data visibility."}
           </s-paragraph>
           <s-link href="/app/billing?src=analytics_paywall">Upgrade to Premium</s-link>
         </s-section>
@@ -288,6 +308,32 @@ export default function AnalyticsPage() {
               </>
             ) : (
               <s-paragraph>No billing entry source data yet.</s-paragraph>
+            )}
+          </s-section>
+
+          <s-section heading="A/B Test Exposure (30 Days)">
+            <s-unordered-list>
+              <s-list-item>Total A/B exposures: {abExposureTotal}</s-list-item>
+              <s-list-item>
+                Variant A: {abExposureVariantA} ({abSplitA}%)
+              </s-list-item>
+              <s-list-item>
+                Variant B: {abExposureVariantB} ({abSplitB}%)
+              </s-list-item>
+            </s-unordered-list>
+            {(abExposureSources.length ?? 0) > 0 ? (
+              <>
+                <s-paragraph>Top exposure sources:</s-paragraph>
+                <s-unordered-list>
+                  {abExposureSources.map((item) => (
+                    <s-list-item key={item.source}>
+                      {item.source}: {item.total}
+                    </s-list-item>
+                  ))}
+                </s-unordered-list>
+              </>
+            ) : (
+              <s-paragraph>No A/B exposures tracked yet.</s-paragraph>
             )}
           </s-section>
         </>

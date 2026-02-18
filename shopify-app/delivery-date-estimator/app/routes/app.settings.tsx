@@ -36,6 +36,11 @@ const DEFAULTS = {
   labelText: "Estimated delivery",
   countdownText: "Order within",
   countdownSuffix: "to get it by",
+  abTestEnabled: false,
+  abTestSplit: 50,
+  labelTextVariantB: "",
+  countdownTextVariantB: "",
+  countdownSuffixVariantB: "",
   iconStyle: "truck",
   fontSize: 14,
   textColor: "#333333",
@@ -194,6 +199,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
   });
   const activePlan = getActivePlan(appSubscriptions.at(0)?.name);
   const proUnlocked = activePlan !== "free";
+  const premiumUnlocked = activePlan === "premium";
 
   const shippingDaysMin = getInt(formData, "shippingDaysMin", DEFAULTS.shippingDaysMin, {
     min: 0,
@@ -217,13 +223,29 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
   const labelText = getText(formData, "labelText", DEFAULTS.labelText);
   const countdownText = getText(formData, "countdownText", DEFAULTS.countdownText);
   const countdownSuffix = getText(formData, "countdownSuffix", DEFAULTS.countdownSuffix);
+  const abTestSplit = getInt(formData, "abTestSplit", DEFAULTS.abTestSplit, {
+    min: 10,
+    max: 90,
+  });
+  const labelTextVariantB = getText(formData, "labelTextVariantB", DEFAULTS.labelTextVariantB);
+  const countdownTextVariantB = getText(
+    formData,
+    "countdownTextVariantB",
+    DEFAULTS.countdownTextVariantB,
+  );
+  const countdownSuffixVariantB = getText(
+    formData,
+    "countdownSuffixVariantB",
+    DEFAULTS.countdownSuffixVariantB,
+  );
   const textColor = getText(formData, "textColor", DEFAULTS.textColor);
   const backgroundColor = getText(formData, "backgroundColor", DEFAULTS.backgroundColor);
   const borderColor = getText(formData, "borderColor", DEFAULTS.borderColor);
   const urgencyColor = getText(formData, "urgencyColor", DEFAULTS.urgencyColor);
   const holidaysInput = getText(formData, "holidays", "");
   const { holidays, invalid } = parseHolidayInput(holidaysInput);
-  const submittedPremiumFields = [
+  const abTestEnabled = formData.get("abTestEnabled") === "on";
+  const submittedProFields = [
     "holidays",
     "countdownSuffix",
     "iconStyle",
@@ -232,6 +254,13 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     "backgroundColor",
     "borderColor",
     "urgencyColor",
+  ].some((field) => formData.has(field));
+  const submittedPremiumFields = [
+    "abTestEnabled",
+    "abTestSplit",
+    "labelTextVariantB",
+    "countdownTextVariantB",
+    "countdownSuffixVariantB",
   ].some((field) => formData.has(field));
 
   if (shippingDaysMax < shippingDaysMin) {
@@ -258,6 +287,15 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     errors.push("Countdown suffix must be 80 characters or fewer.");
   }
 
+  if (
+    premiumUnlocked &&
+    (labelTextVariantB.length > 80 ||
+      countdownTextVariantB.length > 80 ||
+      countdownSuffixVariantB.length > 80)
+  ) {
+    errors.push("Variant B text fields must be 80 characters or fewer.");
+  }
+
   if (proUnlocked) {
     for (const [name, value] of [
       ["Text color", textColor],
@@ -279,9 +317,25 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     );
   }
 
-  if (!proUnlocked && submittedPremiumFields) {
+  if (
+    premiumUnlocked &&
+    abTestEnabled &&
+    !labelTextVariantB &&
+    !countdownTextVariantB &&
+    !countdownSuffixVariantB
+  ) {
+    errors.push("Enable A/B testing only after adding at least one Variant B text value.");
+  }
+
+  if (!proUnlocked && submittedProFields) {
     warnings.push(
       "Advanced styling and holiday calendar are Pro features. Upgrade to Pro or Premium to edit them.",
+    );
+  }
+
+  if (!premiumUnlocked && submittedPremiumFields) {
+    warnings.push(
+      "A/B copy testing is a Premium feature. Upgrade to Premium to run storefront experiments.",
     );
   }
 
@@ -317,10 +371,20 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     updateData.urgencyColor = normalizedColor(urgencyColor, DEFAULTS.urgencyColor);
   }
 
+  if (premiumUnlocked) {
+    updateData.abTestEnabled = abTestEnabled;
+    updateData.abTestSplit = abTestSplit;
+    updateData.labelTextVariantB = labelTextVariantB;
+    updateData.countdownTextVariantB = countdownTextVariantB;
+    updateData.countdownSuffixVariantB = countdownSuffixVariantB;
+  }
+
   await upsertStoreConfig(session.shop, updateData);
   await trackAnalyticsEvent(session.shop, "settings_saved", {
     activePlan,
     proUnlocked,
+    premiumUnlocked,
+    abTestEnabled: premiumUnlocked ? abTestEnabled : null,
     warningsCount: warnings.length,
   });
   await incrementDailyMetric(session.shop, "settings_saved");
@@ -339,6 +403,7 @@ export default function SettingsPage() {
 
   const iconStyle = isIconStyle(c.iconStyle) ? c.iconStyle : DEFAULTS.iconStyle;
   const holidayText = c.holidays.join("\n");
+  const abSplit = Math.min(90, Math.max(10, Number(c.abTestSplit) || DEFAULTS.abTestSplit));
   const actionErrors = actionData?.errors ?? [];
   const actionWarnings = actionData?.warnings ?? [];
 
@@ -386,7 +451,7 @@ export default function SettingsPage() {
         <s-section>
           <s-paragraph>
             You have Pro configuration features unlocked. Upgrade to <strong>Premium</strong> for
-            full conversion analytics.
+            A/B copy testing and full conversion analytics.
           </s-paragraph>
           <s-link href="/app/billing?src=settings_paywall_premium">Upgrade to Premium</s-link>
         </s-section>
@@ -566,6 +631,60 @@ export default function SettingsPage() {
               </div>
             </s-section>
           </>
+        )}
+
+        {premiumUnlocked && (
+          <s-section heading="A/B Copy Test (Premium)">
+            <div style={{ display: "grid", gap: 12, maxWidth: 520 }}>
+              <label>
+                <input
+                  name="abTestEnabled"
+                  type="checkbox"
+                  defaultChecked={Boolean(c.abTestEnabled)}
+                />
+                Enable copy A/B test on storefront widget
+              </label>
+              <label>
+                Variant A traffic split (%)
+                <input
+                  name="abTestSplit"
+                  type="number"
+                  min={10}
+                  max={90}
+                  step={1}
+                  defaultValue={abSplit}
+                />
+              </label>
+              <label>
+                Variant B Label Text
+                <input
+                  name="labelTextVariantB"
+                  defaultValue={c.labelTextVariantB}
+                  maxLength={80}
+                />
+              </label>
+              <label>
+                Variant B Countdown Text
+                <input
+                  name="countdownTextVariantB"
+                  defaultValue={c.countdownTextVariantB}
+                  maxLength={80}
+                />
+              </label>
+              <label>
+                Variant B Countdown Suffix
+                <input
+                  name="countdownSuffixVariantB"
+                  defaultValue={c.countdownSuffixVariantB}
+                  maxLength={80}
+                />
+              </label>
+              <small>
+                Variant A uses your primary display text values above. Add at least one Variant B
+                field before enabling the test.
+              </small>
+            </div>
+          </s-section>
         )}
 
         <button type="submit">Save Settings</button>

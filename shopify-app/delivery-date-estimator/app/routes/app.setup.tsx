@@ -18,6 +18,9 @@ export default function SetupPage() {
           <s-list-item>Shipping range: 3 to 5 business days.</s-list-item>
           <s-list-item>Exclude weekends: enabled.</s-list-item>
           <s-list-item>Countdown timer: enabled.</s-list-item>
+          <s-list-item>
+            Premium: enable A/B copy test to compare urgency messaging.
+          </s-list-item>
         </s-unordered-list>
       </s-section>
 
@@ -31,6 +34,9 @@ export default function SetupPage() {
           </s-list-item>
           <s-list-item>
             Confirm styling and text render correctly on mobile and desktop.
+          </s-list-item>
+          <s-list-item>
+            If Premium is active, verify Variant A and B copy both render on live traffic.
           </s-list-item>
           <s-list-item>Check at least one theme other than Dawn if possible.</s-list-item>
         </s-unordered-list>

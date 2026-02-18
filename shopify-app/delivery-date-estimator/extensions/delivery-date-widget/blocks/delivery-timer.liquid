@@ -177,7 +177,15 @@
       excludeWeekends: block.dataset.excludeWeekends === 'true',
       showCountdown: block.dataset.showCountdown === 'true',
       holidays: (block.dataset.holidays || '').split(',').filter(Boolean),
-      timezone: block.dataset.timezone || 'America/New_York'
+      timezone: block.dataset.timezone || 'America/New_York',
+      labelTextA: 'Estimated delivery',
+      countdownTextA: 'Order within',
+      countdownSuffixA: 'to get it by',
+      abTestEnabled: false,
+      abTestSplit: 50,
+      labelTextVariantB: '',
+      countdownTextVariantB: '',
+      countdownSuffixVariantB: ''
     };
 
     const dateEl = document.getElementById('de-date-{{ block.id }}');
@@ -187,7 +195,128 @@
     const countdownLabelEl = document.getElementById('de-countdown-label-{{ block.id }}');
     const countdownSuffixTextEl = document.getElementById('de-countdown-suffix-text-{{ block.id }}');
     const countdownTargetEl = document.getElementById('de-countdown-target-{{ block.id }}');
+    const clientIdKey = 'dde_client_id_v1';
     let intervalId = null;
+    let currentVariant = 'a';
+    let impressionTracked = false;
+    let abExposureTracked = false;
+
+    config.labelTextA = labelEl
+      ? labelEl.textContent.replace(/:\s*$/, '').trim() || config.labelTextA
+      : config.labelTextA;
+    config.countdownTextA = countdownLabelEl
+      ? countdownLabelEl.textContent.trim() || config.countdownTextA
+      : config.countdownTextA;
+    config.countdownSuffixA = countdownSuffixTextEl
+      ? countdownSuffixTextEl.textContent.trim() || config.countdownSuffixA
+      : config.countdownSuffixA;
+
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+
+    function toNonEmptyString(value, fallback) {
+      if (typeof value !== 'string') return fallback;
+      const normalized = value.trim();
+      return normalized || fallback;
+    }
+
+    function toOptionalString(value) {
+      if (typeof value !== 'string') return '';
+      return value.trim();
+    }
+
+    function setText(el, value, appendColon) {
+      if (!el) return;
+      el.textContent = appendColon ? value + ':' : value;
+    }
+
+    function ensureClientId() {
+      try {
+        const existing = localStorage.getItem(clientIdKey);
+        if (existing) return existing;
+        const created = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        localStorage.setItem(clientIdKey, created);
+        return created;
+      } catch (error) {
+        return Math.random().toString(36).slice(2);
+      }
+    }
+
+    function hashToPercent(value) {
+      let hash = 0;
+      for (let i = 0; i < value.length; i += 1) {
+        hash = (hash * 31 + value.charCodeAt(i)) | 0;
+      }
+      return Math.abs(hash) % 100;
+    }
+
+    function isAbActive() {
+      return Boolean(
+        config.abTestEnabled &&
+          (
+            config.labelTextVariantB ||
+            config.countdownTextVariantB ||
+            config.countdownSuffixVariantB
+          )
+      );
+    }
+
+    function assignVariant() {
+      if (!isAbActive()) {
+        currentVariant = 'a';
+        return;
+      }
+      const split = clamp(config.abTestSplit, 10, 90);
+      const bucket = hashToPercent(ensureClientId());
+      currentVariant = bucket < split ? 'a' : 'b';
+    }
+
+    function applyCopyVariant() {
+      assignVariant();
+      const useVariantB = currentVariant === 'b' && isAbActive();
+      const label = useVariantB && config.labelTextVariantB
+        ? config.labelTextVariantB
+        : config.labelTextA;
+      const countdown = useVariantB && config.countdownTextVariantB
+        ? config.countdownTextVariantB
+        : config.countdownTextA;
+      const suffix = useVariantB && config.countdownSuffixVariantB
+        ? config.countdownSuffixVariantB
+        : config.countdownSuffixA;
+
+      setText(labelEl, label, true);
+      setText(countdownLabelEl, countdown, false);
+      setText(countdownSuffixTextEl, suffix, false);
+    }
+
+    function trackEvent(event, includeVariant) {
+      const payload = {
+        event: event,
+        variant: includeVariant ? currentVariant : undefined
+      };
+
+      const url = '/apps/delivery-date-estimator/event?source=theme_block';
+      const body = JSON.stringify(payload);
+
+      if (navigator.sendBeacon) {
+        const sent = navigator.sendBeacon(
+          url,
+          new Blob([body], { type: 'application/json' })
+        );
+        if (sent) return;
+      }
+
+      fetch(url, {
+        method: 'POST',
+        credentials: 'omit',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json' },
+        body
+      }).catch(function() {
+        // Ignore tracking failures.
+      });
+    }
 
     function applyRemoteConfig(remote) {
       if (!remote || typeof remote !== 'object') return;
@@ -214,20 +343,16 @@
       config.holidays = Array.isArray(remote.holidays)
         ? remote.holidays.filter((entry) => typeof entry === 'string')
         : config.holidays;
+      config.labelTextA = toNonEmptyString(remote.labelText, config.labelTextA);
+      config.countdownTextA = toNonEmptyString(remote.countdownText, config.countdownTextA);
+      config.countdownSuffixA = toNonEmptyString(remote.countdownSuffix, config.countdownSuffixA);
+      config.abTestEnabled = Boolean(remote.abTestEnabled);
+      config.abTestSplit = clamp(intOr(remote.abTestSplit, config.abTestSplit), 10, 90);
+      config.labelTextVariantB = toOptionalString(remote.labelTextVariantB);
+      config.countdownTextVariantB = toOptionalString(remote.countdownTextVariantB);
+      config.countdownSuffixVariantB = toOptionalString(remote.countdownSuffixVariantB);
 
-      if (labelEl && typeof remote.labelText === 'string' && remote.labelText) {
-        labelEl.textContent = remote.labelText + ':';
-      }
-      if (countdownLabelEl && typeof remote.countdownText === 'string' && remote.countdownText) {
-        countdownLabelEl.textContent = remote.countdownText;
-      }
-      if (
-        countdownSuffixTextEl &&
-        typeof remote.countdownSuffix === 'string' &&
-        remote.countdownSuffix
-      ) {
-        countdownSuffixTextEl.textContent = remote.countdownSuffix;
-      }
+      applyCopyVariant();
 
       if (typeof remote.textColor === 'string' && remote.textColor) {
         block.style.setProperty('--de-text-color', remote.textColor);
@@ -366,8 +491,19 @@
     }
 
     loadRemoteConfig().finally(() => {
+      applyCopyVariant();
       calculate();
       restartInterval();
+
+      if (!impressionTracked) {
+        trackEvent('widget_impression', isAbActive());
+        impressionTracked = true;
+      }
+
+      if (isAbActive() && !abExposureTracked) {
+        trackEvent('ab_variant_exposed', true);
+        abExposureTracked = true;
+      }
     });
   })();
 </script>

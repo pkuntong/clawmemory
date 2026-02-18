@@ -54,6 +54,7 @@ const BILLING_METRIC_KEYS = [
   "api_config_requests",
   "settings_saved",
   "billing_upgrade_requested",
+  "storefront_event_widget_impression",
 ] as const;
 
 function sanitizeSource(value: string | null | undefined) {
@@ -101,10 +102,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const apiRequests30d = totalFor("api_config_requests");
   const settingsSaves30d = totalFor("settings_saved");
   const upgradeIntents30d = totalFor("billing_upgrade_requested");
+  const widgetImpressions30d = totalFor("storefront_event_widget_impression");
 
   let recommendedPlan: PlanKey | null = null;
   if (currentPlan === "free") {
-    recommendedPlan = apiRequests30d >= 1200 || settingsSaves30d >= 25 ? "premium" : "pro";
+    recommendedPlan =
+      apiRequests30d >= 1200 || settingsSaves30d >= 25 || widgetImpressions30d >= 400
+        ? "premium"
+        : "pro";
   } else if (currentPlan === "pro") {
     recommendedPlan = "premium";
   }
@@ -121,6 +126,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     settingsSaves30d,
     source,
     upgradeIntents30d,
+    widgetImpressions30d,
     activeSubscriptionId: activeSubscription?.id ?? null,
   };
 };
@@ -188,6 +194,7 @@ export default function BillingPage() {
     settingsSaves30d,
     source,
     upgradeIntents30d,
+    widgetImpressions30d,
   } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
@@ -211,8 +218,8 @@ export default function BillingPage() {
 
       <s-section heading="Plan Recommendation">
         <s-paragraph>
-          Last 30 days: {apiRequests30d} storefront requests, {settingsSaves30d} settings saves,
-          {upgradeIntents30d} upgrade intents.
+          Last 30 days: {apiRequests30d} storefront requests, {widgetImpressions30d} widget
+          impressions, {settingsSaves30d} settings saves, {upgradeIntents30d} upgrade intents.
         </s-paragraph>
         {recommendedPlan ? (
           <>
@@ -222,7 +229,7 @@ export default function BillingPage() {
             <s-paragraph>
               {recommendedPlan === "pro"
                 ? "Pro unlocks branded styling and holiday logic to improve conversion trust."
-                : "Premium adds conversion analytics so you can optimize copy and prove ROI."}
+                : "Premium adds storefront A/B copy testing and conversion analytics so you can optimize messaging and prove ROI."}
             </s-paragraph>
           </>
         ) : (
