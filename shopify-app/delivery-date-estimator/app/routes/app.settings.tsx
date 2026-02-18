@@ -8,6 +8,9 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getStoreConfig, upsertStoreConfig } from "../db.server";
 import { authenticate } from "../shopify.server";
 
+const ICON_STYLE_OPTIONS = ["truck", "package", "clock", "none"] as const;
+type IconStyle = (typeof ICON_STYLE_OPTIONS)[number];
+
 const DEFAULTS = {
   cutoffHour: 14,
   processingDays: 1,
@@ -15,6 +18,7 @@ const DEFAULTS = {
   shippingDaysMax: 5,
   excludeWeekends: true,
   timezone: "America/New_York",
+  holidays: [] as string[],
   showCountdown: true,
   labelText: "Estimated delivery",
   countdownText: "Order within",
@@ -27,15 +31,99 @@ const DEFAULTS = {
   urgencyColor: "#e63946",
 } as const;
 
+const COMMON_TIMEZONES = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Phoenix",
+  "America/Anchorage",
+  "Pacific/Honolulu",
+  "Europe/London",
+  "Europe/Paris",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+];
+
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+const isValidIsoDate = (value: string) => {
+  if (!ISO_DATE_PATTERN.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+};
+
+const parseStoredHolidays = (raw: string | null | undefined): string[] => {
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+
+    return Array.from(
+      new Set(
+        parsed
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter((value) => value !== "" && isValidIsoDate(value)),
+      ),
+    ).sort();
+  } catch {
+    return [];
+  }
+};
+
+const parseHolidayInput = (raw: string) => {
+  const candidates = raw
+    .split(/[,\n]/g)
+    .map((value) => value.trim())
+    .filter((value) => value !== "");
+
+  const valid: string[] = [];
+  const invalid: string[] = [];
+
+  for (const value of candidates) {
+    if (isValidIsoDate(value)) {
+      valid.push(value);
+    } else {
+      invalid.push(value);
+    }
+  }
+
+  return {
+    holidays: Array.from(new Set(valid)).sort(),
+    invalid,
+  };
+};
+
+const isIconStyle = (value: string): value is IconStyle => {
+  return ICON_STYLE_OPTIONS.includes(value as IconStyle);
+};
+
+const normalizedColor = (value: string, fallback: string) => {
+  if (!HEX_COLOR_PATTERN.test(value)) return fallback;
+  return value.length === 4
+    ? `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}`
+    : value;
+};
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const config = await getStoreConfig(session.shop);
+  const rawConfig = await getStoreConfig(session.shop);
+  const config = rawConfig
+    ? {
+        ...rawConfig,
+        holidays: parseStoredHolidays(rawConfig.holidays),
+      }
+    : null;
+
   return { shop: session.shop, config };
 };
 
 type ActionData = {
   success: boolean;
-  error?: string;
+  errors?: string[];
 };
 
 const getInt = (
@@ -65,38 +153,98 @@ const getText = (formData: FormData, key: string, fallback: string) => {
 export const action = async ({ request }: ActionFunctionArgs): Promise<ActionData> => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
+  const errors: string[] = [];
 
   const shippingDaysMin = getInt(formData, "shippingDaysMin", DEFAULTS.shippingDaysMin, {
     min: 0,
+    max: 60,
   });
   const shippingDaysMax = getInt(formData, "shippingDaysMax", DEFAULTS.shippingDaysMax, {
     min: 0,
+    max: 60,
   });
+  const cutoffHour = getInt(formData, "cutoffHour", DEFAULTS.cutoffHour, {
+    min: 0,
+    max: 23,
+  });
+  const processingDays = getInt(formData, "processingDays", DEFAULTS.processingDays, {
+    min: 0,
+    max: 30,
+  });
+  const timezone = getText(formData, "timezone", DEFAULTS.timezone);
+  const iconStyleRaw = getText(formData, "iconStyle", DEFAULTS.iconStyle).toLowerCase();
+  const fontSize = getInt(formData, "fontSize", DEFAULTS.fontSize, { min: 10, max: 48 });
+  const labelText = getText(formData, "labelText", DEFAULTS.labelText);
+  const countdownText = getText(formData, "countdownText", DEFAULTS.countdownText);
+  const countdownSuffix = getText(formData, "countdownSuffix", DEFAULTS.countdownSuffix);
+  const textColor = getText(formData, "textColor", DEFAULTS.textColor);
+  const backgroundColor = getText(formData, "backgroundColor", DEFAULTS.backgroundColor);
+  const borderColor = getText(formData, "borderColor", DEFAULTS.borderColor);
+  const urgencyColor = getText(formData, "urgencyColor", DEFAULTS.urgencyColor);
+  const holidaysInput = getText(formData, "holidays", "");
+  const { holidays, invalid } = parseHolidayInput(holidaysInput);
 
   if (shippingDaysMax < shippingDaysMin) {
-    return {
-      success: false,
-      error: "Max shipping days must be greater than or equal to min shipping days.",
-    };
+    errors.push("Max shipping days must be greater than or equal to min shipping days.");
+  }
+
+  if (!timezone.includes("/")) {
+    errors.push("Timezone must be an IANA value like America/New_York.");
+  }
+
+  if (timezone.length > 80) {
+    errors.push("Timezone is too long.");
+  }
+
+  if (!isIconStyle(iconStyleRaw)) {
+    errors.push("Icon style must be one of: truck, package, clock, or none.");
+  }
+
+  if (labelText.length > 80 || countdownText.length > 80 || countdownSuffix.length > 80) {
+    errors.push("Label and countdown text fields must be 80 characters or fewer.");
+  }
+
+  for (const [name, value] of [
+    ["Text color", textColor],
+    ["Background color", backgroundColor],
+    ["Border color", borderColor],
+    ["Urgency color", urgencyColor],
+  ]) {
+    if (!HEX_COLOR_PATTERN.test(value)) {
+      errors.push(`${name} must be a valid hex color (for example #333333).`);
+    }
+  }
+
+  if (invalid.length > 0) {
+    const sample = invalid.slice(0, 5).join(", ");
+    const suffix = invalid.length > 5 ? ` (+${invalid.length - 5} more)` : "";
+    errors.push(
+      `Invalid holiday dates: ${sample}${suffix}. Use YYYY-MM-DD format (for example 2026-12-25).`,
+    );
+  }
+
+  if (errors.length > 0) {
+    return { success: false, errors };
   }
 
   await upsertStoreConfig(session.shop, {
-    cutoffHour: getInt(formData, "cutoffHour", DEFAULTS.cutoffHour, { min: 0, max: 23 }),
-    processingDays: getInt(formData, "processingDays", DEFAULTS.processingDays, { min: 0 }),
+    cutoffHour,
+    processingDays,
     shippingDaysMin,
     shippingDaysMax,
     excludeWeekends: formData.get("excludeWeekends") === "on",
-    timezone: getText(formData, "timezone", DEFAULTS.timezone),
+    timezone,
+    holidays: JSON.stringify(holidays),
     showCountdown: formData.get("showCountdown") === "on",
-    labelText: getText(formData, "labelText", DEFAULTS.labelText),
-    countdownText: getText(formData, "countdownText", DEFAULTS.countdownText),
-    countdownSuffix: getText(formData, "countdownSuffix", DEFAULTS.countdownSuffix),
-    iconStyle: getText(formData, "iconStyle", DEFAULTS.iconStyle),
-    fontSize: getInt(formData, "fontSize", DEFAULTS.fontSize, { min: 10, max: 48 }),
-    textColor: getText(formData, "textColor", DEFAULTS.textColor),
-    backgroundColor: getText(formData, "backgroundColor", DEFAULTS.backgroundColor),
-    borderColor: getText(formData, "borderColor", DEFAULTS.borderColor),
-    urgencyColor: getText(formData, "urgencyColor", DEFAULTS.urgencyColor),
+    labelText,
+    countdownText,
+    countdownSuffix,
+    iconStyle: iconStyleRaw,
+    fontSize,
+    textColor: normalizedColor(textColor, DEFAULTS.textColor),
+    backgroundColor: normalizedColor(backgroundColor, DEFAULTS.backgroundColor),
+    borderColor: normalizedColor(borderColor, DEFAULTS.borderColor),
+    urgencyColor: normalizedColor(urgencyColor, DEFAULTS.urgencyColor),
   });
 
   return { success: true };
@@ -105,18 +253,34 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
 export default function SettingsPage() {
   const { config } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
-  const c = { ...DEFAULTS, ...(config || {}) };
+  const c = {
+    ...DEFAULTS,
+    ...(config || {}),
+    holidays: Array.isArray(config?.holidays) ? config.holidays : DEFAULTS.holidays,
+  };
+
+  const iconStyle = isIconStyle(c.iconStyle) ? c.iconStyle : DEFAULTS.iconStyle;
+  const holidayText = c.holidays.join("\n");
+  const actionErrors = actionData?.errors ?? [];
 
   return (
     <s-page heading="Delivery Settings">
       {actionData?.success && (
         <s-section>
-          <s-paragraph>Saved.</s-paragraph>
+          <s-paragraph>
+            Saved. Theme extension requests to <code>/api/config</code> will return the updated
+            values.
+          </s-paragraph>
         </s-section>
       )}
-      {actionData?.error && (
+      {actionErrors.length > 0 && (
         <s-section>
-          <s-paragraph>{actionData.error}</s-paragraph>
+          <s-paragraph>Could not save settings. Fix the following:</s-paragraph>
+          <ul style={{ marginTop: 8 }}>
+            {actionErrors.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
         </s-section>
       )}
 
@@ -125,19 +289,47 @@ export default function SettingsPage() {
           <div style={{ display: "grid", gap: 12, maxWidth: 520 }}>
             <label>
               Cutoff Hour (24h)
-              <input name="cutoffHour" type="number" defaultValue={c.cutoffHour} />
+              <input
+                name="cutoffHour"
+                type="number"
+                min={0}
+                max={23}
+                step={1}
+                defaultValue={c.cutoffHour}
+              />
             </label>
             <label>
               Processing Days
-              <input name="processingDays" type="number" defaultValue={c.processingDays} />
+              <input
+                name="processingDays"
+                type="number"
+                min={0}
+                max={30}
+                step={1}
+                defaultValue={c.processingDays}
+              />
             </label>
             <label>
               Min Shipping Days
-              <input name="shippingDaysMin" type="number" defaultValue={c.shippingDaysMin} />
+              <input
+                name="shippingDaysMin"
+                type="number"
+                min={0}
+                max={60}
+                step={1}
+                defaultValue={c.shippingDaysMin}
+              />
             </label>
             <label>
               Max Shipping Days
-              <input name="shippingDaysMax" type="number" defaultValue={c.shippingDaysMax} />
+              <input
+                name="shippingDaysMax"
+                type="number"
+                min={0}
+                max={60}
+                step={1}
+                defaultValue={c.shippingDaysMax}
+              />
             </label>
             <label>
               <input
@@ -149,8 +341,34 @@ export default function SettingsPage() {
             </label>
             <label>
               Timezone
-              <input name="timezone" defaultValue={c.timezone} />
+              <input
+                name="timezone"
+                defaultValue={c.timezone}
+                list="timezone-options"
+                maxLength={80}
+              />
             </label>
+            <datalist id="timezone-options">
+              {COMMON_TIMEZONES.map((timezone) => (
+                <option key={timezone} value={timezone} />
+              ))}
+            </datalist>
+          </div>
+        </s-section>
+
+        <s-section heading="Holidays (Skipped Dates)">
+          <div style={{ display: "grid", gap: 8, maxWidth: 520 }}>
+            <label htmlFor="holidays-input">
+              Holiday Dates (one per line or comma-separated)
+            </label>
+            <textarea
+              id="holidays-input"
+              name="holidays"
+              rows={6}
+              defaultValue={holidayText}
+              placeholder={"2026-11-26\n2026-12-25\n2027-01-01"}
+            />
+            <small>Use YYYY-MM-DD format. These dates will be excluded from delivery estimates.</small>
           </div>
         </s-section>
 
@@ -162,39 +380,67 @@ export default function SettingsPage() {
             </label>
             <label>
               Label Text
-              <input name="labelText" defaultValue={c.labelText} />
+              <input name="labelText" defaultValue={c.labelText} maxLength={80} />
             </label>
             <label>
               Countdown Text
-              <input name="countdownText" defaultValue={c.countdownText} />
+              <input name="countdownText" defaultValue={c.countdownText} maxLength={80} />
             </label>
             <label>
               Countdown Suffix
-              <input name="countdownSuffix" defaultValue={c.countdownSuffix} />
+              <input name="countdownSuffix" defaultValue={c.countdownSuffix} maxLength={80} />
             </label>
             <label>
               Icon Style
-              <input name="iconStyle" defaultValue={c.iconStyle} />
+              <select name="iconStyle" defaultValue={iconStyle}>
+                <option value="truck">Truck</option>
+                <option value="package">Package</option>
+                <option value="clock">Clock</option>
+                <option value="none">None</option>
+              </select>
             </label>
             <label>
               Font Size
-              <input name="fontSize" type="number" defaultValue={c.fontSize} />
+              <input
+                name="fontSize"
+                type="number"
+                min={10}
+                max={48}
+                step={1}
+                defaultValue={c.fontSize}
+              />
             </label>
             <label>
               Text Color
-              <input name="textColor" defaultValue={c.textColor} />
+              <input
+                name="textColor"
+                type="color"
+                defaultValue={normalizedColor(c.textColor, DEFAULTS.textColor)}
+              />
             </label>
             <label>
               Background Color
-              <input name="backgroundColor" defaultValue={c.backgroundColor} />
+              <input
+                name="backgroundColor"
+                type="color"
+                defaultValue={normalizedColor(c.backgroundColor, DEFAULTS.backgroundColor)}
+              />
             </label>
             <label>
               Border Color
-              <input name="borderColor" defaultValue={c.borderColor} />
+              <input
+                name="borderColor"
+                type="color"
+                defaultValue={normalizedColor(c.borderColor, DEFAULTS.borderColor)}
+              />
             </label>
             <label>
               Urgency Color
-              <input name="urgencyColor" defaultValue={c.urgencyColor} />
+              <input
+                name="urgencyColor"
+                type="color"
+                defaultValue={normalizedColor(c.urgencyColor, DEFAULTS.urgencyColor)}
+              />
             </label>
           </div>
         </s-section>
