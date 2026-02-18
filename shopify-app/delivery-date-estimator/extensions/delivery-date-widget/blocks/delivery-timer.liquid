@@ -1,0 +1,436 @@
+{% comment %}
+  Delivery Date Estimator & Countdown Timer
+  Theme App Extension Block - Shows on product pages
+
+  HOW TO USE:
+  1. Copy this file into: extensions/delivery-date-widget/blocks/
+  2. Delete the default .liquid file that was there
+  3. Run: shopify app dev
+  4. In your dev store: Online Store → Customize → Product page → Add block → Delivery Date Estimator
+{% endcomment %}
+
+{% assign cutoff_hour = block.settings.cutoff_hour | default: 14 %}
+{% assign processing_days = block.settings.processing_days | default: 1 %}
+{% assign shipping_min = block.settings.shipping_days_min | default: 3 %}
+{% assign shipping_max = block.settings.shipping_days_max | default: 5 %}
+{% assign show_countdown = block.settings.show_countdown %}
+{% assign exclude_weekends = block.settings.exclude_weekends %}
+{% assign urgency_color = block.settings.urgency_color %}
+{% assign text_color = block.settings.text_color %}
+{% assign bg_color = block.settings.background_color %}
+{% assign border_color = block.settings.border_color %}
+{% assign icon_style = block.settings.icon_style %}
+{% assign font_size = block.settings.font_size %}
+
+<div id="delivery-estimator-{{ block.id }}"
+     class="delivery-estimator"
+     data-cutoff-hour="{{ cutoff_hour }}"
+     data-processing-days="{{ processing_days }}"
+     data-shipping-min="{{ shipping_min }}"
+     data-shipping-max="{{ shipping_max }}"
+     data-exclude-weekends="{{ exclude_weekends }}"
+     data-show-countdown="{{ show_countdown }}"
+     data-holidays="{{ block.settings.holidays }}"
+     data-timezone="{{ block.settings.timezone | default: 'America/New_York' }}"
+     style="
+       --de-text-color: {{ text_color }};
+       --de-bg-color: {{ bg_color }};
+       --de-border-color: {{ border_color }};
+       --de-urgency-color: {{ urgency_color }};
+       --de-font-size: {{ font_size }}px;
+     ">
+
+  {% if icon_style == 'truck' %}
+    <div class="de-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="1" y="3" width="15" height="13"></rect>
+        <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+        <circle cx="5.5" cy="18.5" r="2.5"></circle>
+        <circle cx="18.5" cy="18.5" r="2.5"></circle>
+      </svg>
+    </div>
+  {% elsif icon_style == 'package' %}
+    <div class="de-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line>
+        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+        <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+        <line x1="12" y1="22.08" x2="12" y2="12"></line>
+      </svg>
+    </div>
+  {% elsif icon_style == 'clock' %}
+    <div class="de-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12 6 12 12 16 14"></polyline>
+      </svg>
+    </div>
+  {% endif %}
+
+  <div class="de-content">
+    <div class="de-delivery-line">
+      <span class="de-label">{{ block.settings.label_text | default: 'Estimated delivery' }}:</span>
+      <span class="de-date" id="de-date-{{ block.id }}"></span>
+    </div>
+
+    {% if show_countdown %}
+      <div class="de-countdown-line" id="de-countdown-wrap-{{ block.id }}">
+        <span class="de-countdown-label">{{ block.settings.countdown_text | default: 'Order within' }}</span>
+        <span class="de-countdown" id="de-countdown-{{ block.id }}"></span>
+        <span class="de-countdown-suffix">{{ block.settings.countdown_suffix | default: 'to get it by' }}
+          <strong id="de-countdown-target-{{ block.id }}"></strong>
+        </span>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+  .delivery-estimator {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 16px;
+    margin: 12px 0;
+    border: 1.5px solid var(--de-border-color, #e2e2e2);
+    border-radius: 8px;
+    background: var(--de-bg-color, #fafafa);
+    font-size: var(--de-font-size, 14px);
+    color: var(--de-text-color, #333);
+    line-height: 1.5;
+    font-family: inherit;
+  }
+
+  .de-icon {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--de-text-color, #333);
+    opacity: 0.8;
+  }
+
+  .de-content {
+    flex: 1;
+  }
+
+  .de-delivery-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: baseline;
+  }
+
+  .de-label {
+    font-weight: 500;
+  }
+
+  .de-date {
+    font-weight: 700;
+  }
+
+  .de-countdown-line {
+    margin-top: 4px;
+    font-size: 0.9em;
+    opacity: 0.85;
+  }
+
+  .de-countdown {
+    font-weight: 700;
+    color: var(--de-urgency-color, #e63946);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .de-countdown-suffix strong {
+    font-weight: 600;
+  }
+
+  /* Hide until JS calculates */
+  .delivery-estimator {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  .delivery-estimator.de-ready {
+    opacity: 1;
+  }
+
+  @media (max-width: 480px) {
+    .delivery-estimator {
+      padding: 12px 14px;
+      gap: 8px;
+    }
+    .de-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+  }
+</style>
+
+<script>
+  (function() {
+    const block = document.getElementById('delivery-estimator-{{ block.id }}');
+    if (!block) return;
+
+    const config = {
+      cutoffHour: parseInt(block.dataset.cutoffHour) || 14,
+      processingDays: parseInt(block.dataset.processingDays) || 1,
+      shippingMin: parseInt(block.dataset.shippingMin) || 3,
+      shippingMax: parseInt(block.dataset.shippingMax) || 5,
+      excludeWeekends: block.dataset.excludeWeekends === 'true',
+      showCountdown: block.dataset.showCountdown === 'true',
+      holidays: (block.dataset.holidays || '').split(',').filter(Boolean),
+      timezone: block.dataset.timezone || 'America/New_York'
+    };
+
+    const dateEl = document.getElementById('de-date-{{ block.id }}');
+    const countdownEl = document.getElementById('de-countdown-{{ block.id }}');
+    const countdownWrapEl = document.getElementById('de-countdown-wrap-{{ block.id }}');
+    const countdownTargetEl = document.getElementById('de-countdown-target-{{ block.id }}');
+
+    function getNow() {
+      return new Date(new Date().toLocaleString('en-US', { timeZone: config.timezone }));
+    }
+
+    function isHoliday(date) {
+      const dateStr = date.toISOString().split('T')[0];
+      return config.holidays.includes(dateStr);
+    }
+
+    function isBusinessDay(date) {
+      const day = date.getDay();
+      if (config.excludeWeekends && (day === 0 || day === 6)) return false;
+      if (isHoliday(date)) return false;
+      return true;
+    }
+
+    function addBusinessDays(startDate, numDays) {
+      let current = new Date(startDate);
+      let added = 0;
+      while (added < numDays) {
+        current.setDate(current.getDate() + 1);
+        if (isBusinessDay(current)) added++;
+      }
+      return current;
+    }
+
+    function formatDate(date) {
+      const options = { weekday: 'short', month: 'short', day: 'numeric' };
+      return date.toLocaleDateString('en-US', options);
+    }
+
+    function getCutoffToday() {
+      const now = getNow();
+      const cutoff = new Date(now);
+      cutoff.setHours(config.cutoffHour, 0, 0, 0);
+      return cutoff;
+    }
+
+    function calculate() {
+      const now = getNow();
+      const cutoff = getCutoffToday();
+      const pastCutoff = now >= cutoff;
+
+      let processStart = new Date(now);
+      if (pastCutoff || !isBusinessDay(now)) {
+        processStart.setDate(processStart.getDate() + 1);
+        while (!isBusinessDay(processStart)) {
+          processStart.setDate(processStart.getDate() + 1);
+        }
+      }
+
+      const afterProcessing = addBusinessDays(processStart, config.processingDays);
+      const deliveryMin = addBusinessDays(afterProcessing, config.shippingMin);
+      const deliveryMax = addBusinessDays(afterProcessing, config.shippingMax);
+
+      let dateText;
+      if (config.shippingMin === config.shippingMax) {
+        dateText = formatDate(deliveryMin);
+      } else {
+        dateText = formatDate(deliveryMin) + ' – ' + formatDate(deliveryMax);
+      }
+      dateEl.textContent = dateText;
+
+      if (config.showCountdown && countdownEl && !pastCutoff && isBusinessDay(now)) {
+        const diff = cutoff - now;
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+        let timeStr = '';
+        if (hours > 0) timeStr += hours + 'h ';
+        timeStr += minutes + 'm ' + seconds + 's';
+
+        countdownEl.textContent = timeStr;
+
+        const earlyDelivery = addBusinessDays(
+          addBusinessDays(now, config.processingDays),
+          config.shippingMin
+        );
+        if (countdownTargetEl) {
+          countdownTargetEl.textContent = formatDate(earlyDelivery);
+        }
+        if (countdownWrapEl) countdownWrapEl.style.display = '';
+      } else if (countdownWrapEl) {
+        countdownWrapEl.style.display = 'none';
+      }
+
+      block.classList.add('de-ready');
+    }
+
+    calculate();
+
+    if (config.showCountdown) {
+      setInterval(calculate, 1000);
+    }
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Delivery Date Estimator",
+  "target": "section",
+  "settings": [
+    {
+      "type": "header",
+      "content": "⏱ Shipping Settings"
+    },
+    {
+      "type": "range",
+      "id": "cutoff_hour",
+      "label": "Order cutoff hour (24h format)",
+      "min": 0,
+      "max": 23,
+      "step": 1,
+      "default": 14,
+      "info": "Orders placed after this hour ship next business day. 14 = 2:00 PM"
+    },
+    {
+      "type": "range",
+      "id": "processing_days",
+      "label": "Processing time (business days)",
+      "min": 0,
+      "max": 10,
+      "step": 1,
+      "default": 1,
+      "info": "How many business days to prepare the order before shipping"
+    },
+    {
+      "type": "range",
+      "id": "shipping_days_min",
+      "label": "Minimum shipping days",
+      "min": 1,
+      "max": 30,
+      "step": 1,
+      "default": 3
+    },
+    {
+      "type": "range",
+      "id": "shipping_days_max",
+      "label": "Maximum shipping days",
+      "min": 1,
+      "max": 30,
+      "step": 1,
+      "default": 5
+    },
+    {
+      "type": "checkbox",
+      "id": "exclude_weekends",
+      "label": "Exclude weekends from calculation",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "timezone",
+      "label": "Store timezone",
+      "default": "America/New_York",
+      "info": "Examples: America/New_York, America/Chicago, America/Los_Angeles, Europe/London"
+    },
+    {
+      "type": "text",
+      "id": "holidays",
+      "label": "Holiday dates (comma-separated)",
+      "info": "Format: YYYY-MM-DD. Example: 2026-12-25,2026-01-01,2026-07-04"
+    },
+    {
+      "type": "header",
+      "content": "⏳ Countdown Timer"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_countdown",
+      "label": "Show countdown timer",
+      "default": true,
+      "info": "Shows 'Order within X hours to get it by [date]'"
+    },
+    {
+      "type": "header",
+      "content": "✏️ Text & Labels"
+    },
+    {
+      "type": "text",
+      "id": "label_text",
+      "label": "Delivery label",
+      "default": "Estimated delivery"
+    },
+    {
+      "type": "text",
+      "id": "countdown_text",
+      "label": "Countdown prefix text",
+      "default": "Order within"
+    },
+    {
+      "type": "text",
+      "id": "countdown_suffix",
+      "label": "Countdown suffix text",
+      "default": "to get it by"
+    },
+    {
+      "type": "header",
+      "content": "🎨 Appearance"
+    },
+    {
+      "type": "select",
+      "id": "icon_style",
+      "label": "Icon",
+      "options": [
+        { "value": "truck", "label": "🚚 Truck" },
+        { "value": "package", "label": "📦 Package" },
+        { "value": "clock", "label": "🕐 Clock" },
+        { "value": "none", "label": "No icon" }
+      ],
+      "default": "truck"
+    },
+    {
+      "type": "range",
+      "id": "font_size",
+      "label": "Font size (px)",
+      "min": 12,
+      "max": 20,
+      "step": 1,
+      "default": 14
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text color",
+      "default": "#333333"
+    },
+    {
+      "type": "color",
+      "id": "background_color",
+      "label": "Background color",
+      "default": "#f8f9fa"
+    },
+    {
+      "type": "color",
+      "id": "border_color",
+      "label": "Border color",
+      "default": "#e2e2e2"
+    },
+    {
+      "type": "color",
+      "id": "urgency_color",
+      "label": "Countdown timer color",
+      "default": "#e63946"
+    }
+  ]
+}
+{% endschema %}

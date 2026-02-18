@@ -11,6 +11,7 @@ generator client {
 
 datasource db {
   provider = "sqlite"
+  url      = "file:dev.sqlite"
 }
 
 model Session {
@@ -31,6 +32,9 @@ model Session {
   emailVerified      Boolean?  @default(false)
   refreshToken       String?
   refreshTokenExpires DateTime?
+  
+  // Relations
+  storeConfig        StoreConfig?
 }
 
 model StoreConfig {
@@ -38,20 +42,20 @@ model StoreConfig {
   shop              String   @unique
   
   // Delivery Settings
-  cutoffHour        Int      @default(14)
-  processingDays    Int      @default(1)
-  shippingDaysMin   Int      @default(3)
-  shippingDaysMax   Int      @default(5)
+  cutoffHour        Int      @default(14) // 24h format (14 = 2pm)
+  processingDays    Int      @default(1)  // Business days to process
+  shippingDaysMin   Int      @default(3)  // Min shipping days
+  shippingDaysMax   Int      @default(5)  // Max shipping days
   excludeWeekends   Boolean  @default(true)
   timezone          String   @default("America/New_York")
-  holidays          String   @default("[]")
+  holidays          String   @default("") // JSON array of YYYY-MM-DD strings
   
   // Display Settings
   showCountdown     Boolean  @default(true)
   labelText         String   @default("Estimated delivery")
   countdownText     String   @default("Order within")
   countdownSuffix   String   @default("to get it by")
-  iconStyle         String   @default("truck")
+  iconStyle         String   @default("truck") // truck, package, clock, none
   fontSize          Int      @default(14)
   textColor         String   @default("#333333")
   backgroundColor   String   @default("#f8f9fa")
@@ -61,4 +65,8 @@ model StoreConfig {
   // Metadata
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  
+  // Relations
+  session           Session? @relation(fields: [sessionId], references: [id])
+  sessionId         String?  @unique
 }

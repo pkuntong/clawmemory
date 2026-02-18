@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { json } from "react-router";
+import { data } from "react-router";
 import { getStoreConfig } from "../db.server";
 
 // Public API endpoint for theme extension
@@ -9,7 +9,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const shop = url.searchParams.get("shop");
 
   if (!shop) {
-    return json({ error: "Missing shop parameter" }, { status: 400 });
+    return data({ error: "Missing shop parameter" }, { status: 400 });
   }
 
   // Get store config or return defaults
@@ -17,7 +17,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   if (!config) {
     // Return sensible defaults for new stores
-    return json({
+    return data({
       cutoffHour: 14,
       processingDays: 1,
       shippingDaysMin: 3,
@@ -38,7 +38,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   }
 
-  return json({
+  return data({
     cutoffHour: config.cutoffHour,
     processingDays: config.processingDays,
     shippingDaysMin: config.shippingDaysMin,

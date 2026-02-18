@@ -1,10 +1,20 @@
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+declare global {
+  // eslint-disable-next-line no-var
+  var prismaGlobal: PrismaClient;
+}
+
+if (process.env.NODE_ENV !== "production") {
+  if (!global.prismaGlobal) {
+    global.prismaGlobal = new PrismaClient();
+  }
+}
+
+const prisma = global.prismaGlobal ?? new PrismaClient();
 
 export default prisma;
 
-// StoreConfig helpers
 export async function getStoreConfig(shop: string) {
   return prisma.storeConfig.findUnique({
     where: { shop },
@@ -31,7 +41,7 @@ export async function upsertStoreConfig(
     backgroundColor: string;
     borderColor: string;
     urgencyColor: string;
-  }>
+  }>,
 ) {
   return prisma.storeConfig.upsert({
     where: { shop },
