@@ -1,5 +1,9 @@
-import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import type {
+  ActionFunctionArgs,
+  HeadersFunction,
+  LoaderFunctionArgs,
+} from "react-router";
+import { Form, useActionData, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import {
   PAID_PLAN_NAMES,
@@ -8,8 +12,32 @@ import {
   PLAN_PRO,
   isBillingTestMode,
 } from "../shopify.server";
+import {
+  getAnalyticsSummary,
+  getOnboardingProgress,
+  trackAnalyticsEvent,
+  updateOnboardingProgress,
+  type OnboardingStepKey,
+} from "../db.server";
 
 type PlanKey = "free" | "pro" | "premium";
+
+const ONBOARDING_STEPS: Array<{
+  key: OnboardingStepKey;
+  label: string;
+}> = [
+  { key: "themeBlockAdded", label: "Added the app block in Theme Editor." },
+  {
+    key: "shippingConfigured",
+    label: "Configured cutoff, processing, and shipping range in app settings.",
+  },
+  {
+    key: "holidaysValidated",
+    label: "Validated holiday/weekend behavior on at least two products.",
+  },
+  { key: "mobileVerified", label: "Verified rendering and copy on mobile." },
+  { key: "billingLive", label: "Switched billing mode to live before launch." },
+];
 
 function getActivePlan(subscriptionName: string | undefined): PlanKey {
   if (subscriptionName === PLAN_PREMIUM) {
@@ -19,6 +47,10 @@ function getActivePlan(subscriptionName: string | undefined): PlanKey {
     return "pro";
   }
   return "free";
+}
+
+function isOnboardingStepKey(value: string): value is OnboardingStepKey {
+  return ONBOARDING_STEPS.some((step) => step.key === value);
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -33,18 +65,71 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const activeSubscription = appSubscriptions.at(0);
   const activePlan = getActivePlan(activeSubscription?.name);
   const themeEditorUrl = `https://${session.shop}/admin/themes/current/editor?context=apps`;
+  const onboarding = await getOnboardingProgress(session.shop);
+  const completedSteps = ONBOARDING_STEPS.filter((step) => onboarding[step.key]).length;
+  const completionPercent = Math.round((completedSteps / ONBOARDING_STEPS.length) * 100);
+  const analyticsSummary =
+    activePlan === "premium" ? await getAnalyticsSummary(session.shop, 30) : null;
 
   return {
     activePlan,
+    analyticsSummary,
     billingTestMode,
+    completionPercent,
+    completedSteps,
+    onboarding,
     shop: session.shop,
     themeEditorUrl,
   };
 };
 
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  if (intent !== "toggle-step") {
+    return { success: false, error: "Unknown action." };
+  }
+
+  const step = formData.get("step");
+  const value = formData.get("value");
+
+  if (typeof step !== "string" || !isOnboardingStepKey(step)) {
+    return { success: false, error: "Invalid checklist step." };
+  }
+
+  if (value !== "true" && value !== "false") {
+    return { success: false, error: "Invalid checklist value." };
+  }
+
+  const checked = value === "true";
+
+  await updateOnboardingProgress(session.shop, {
+    [step]: checked,
+  });
+
+  await trackAnalyticsEvent(session.shop, "onboarding_step_toggled", {
+    step,
+    checked,
+  });
+
+  return { success: true };
+};
+
 export default function Index() {
-  const { activePlan, billingTestMode, shop, themeEditorUrl } =
+  const {
+    activePlan,
+    analyticsSummary,
+    billingTestMode,
+    completionPercent,
+    completedSteps,
+    onboarding,
+    shop,
+    themeEditorUrl,
+  } =
     useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
 
   const planLabel = {
     free: "Free",
@@ -68,6 +153,7 @@ export default function Index() {
           <s-text>{billingTestMode ? "Test" : "Live"}</s-text>
         </s-paragraph>
         <s-stack direction="inline" gap="base">
+          <s-link href="/app/settings">Open settings</s-link>
           <s-link href="/app/billing">Manage plan</s-link>
           <s-link href="/app/setup">Open setup guide</s-link>
           <s-link href={themeEditorUrl} target="_blank">
@@ -76,20 +162,78 @@ export default function Index() {
         </s-stack>
       </s-section>
 
-      <s-section heading="Launch Checklist">
+      {actionData?.error && (
+        <s-section>
+          <s-paragraph>{actionData.error}</s-paragraph>
+        </s-section>
+      )}
+
+      <s-section heading="Activation Checklist">
+        <s-paragraph>
+          {completedSteps}/{ONBOARDING_STEPS.length} completed ({completionPercent}%)
+        </s-paragraph>
+        {onboarding.completedAt && (
+          <s-paragraph>
+            Completed on {new Date(onboarding.completedAt).toLocaleDateString()}.
+          </s-paragraph>
+        )}
+
         <s-unordered-list>
-          <s-list-item>Add the app block in Online Store Theme Editor.</s-list-item>
-          <s-list-item>
-            Configure cutoff hour, processing days, and shipping range.
-          </s-list-item>
-          <s-list-item>
-            Confirm weekend and holiday behavior on at least two products.
-          </s-list-item>
-          <s-list-item>
-            Verify mobile rendering and checkout conversion copy.
-          </s-list-item>
-          <s-list-item>Switch billing from test mode before App Store submission.</s-list-item>
+          {ONBOARDING_STEPS.map((step) => {
+            const checked = onboarding[step.key];
+
+            return (
+              <s-list-item key={step.key}>
+                <s-stack direction="inline" gap="base">
+                  <s-text>{checked ? "✅" : "⬜️"}</s-text>
+                  <s-text>{step.label}</s-text>
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="toggle-step" />
+                    <input type="hidden" name="step" value={step.key} />
+                    <input type="hidden" name="value" value={checked ? "false" : "true"} />
+                    <button type="submit">
+                      {checked ? "Mark incomplete" : "Mark complete"}
+                    </button>
+                  </Form>
+                </s-stack>
+              </s-list-item>
+            );
+          })}
         </s-unordered-list>
+      </s-section>
+
+      <s-section heading="Analytics Snapshot">
+        {activePlan === "premium" ? (
+          <>
+            <s-paragraph>
+              Last {analyticsSummary?.windowDays ?? 30} days:{" "}
+              {analyticsSummary?.totalEvents ?? 0} tracked events.
+            </s-paragraph>
+            {analyticsSummary?.lastEventAt && (
+              <s-paragraph>
+                Last event: {new Date(analyticsSummary.lastEventAt).toLocaleString()}
+              </s-paragraph>
+            )}
+            {(analyticsSummary?.eventsByName.length ?? 0) > 0 ? (
+              <s-unordered-list>
+                {analyticsSummary?.eventsByName.slice(0, 5).map((event) => (
+                  <s-list-item key={event.name}>
+                    {event.name}: {event.count}
+                  </s-list-item>
+                ))}
+              </s-unordered-list>
+            ) : (
+              <s-paragraph>No events yet. Interact with settings and checklist first.</s-paragraph>
+            )}
+          </>
+        ) : (
+          <>
+            <s-paragraph>
+              Analytics visibility is included in the Premium plan.
+            </s-paragraph>
+            <s-link href="/app/billing">Upgrade to Premium</s-link>
+          </>
+        )}
       </s-section>
 
       <s-section heading="Plan Capabilities">

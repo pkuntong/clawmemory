@@ -7,6 +7,7 @@ import {
   authenticate,
   isBillingTestMode,
 } from "../shopify.server";
+import { trackAnalyticsEvent } from "../db.server";
 
 type PlanKey = "free" | "pro" | "premium";
 
@@ -87,7 +88,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { billing } = await authenticate.admin(request);
+  const { billing, session } = await authenticate.admin(request);
   const billingTestMode = isBillingTestMode();
   const formData = await request.formData();
   const requestedPlan = getRequestedPlan(formData.get("plan"));
@@ -102,6 +103,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { error: "No active paid subscription found to cancel." };
     }
 
+    await trackAnalyticsEvent(session.shop, "billing_downgrade_requested", {
+      requestedPlan,
+      billingTestMode,
+    });
+
     await billing.cancel({
       subscriptionId,
       isTest: billingTestMode,
@@ -110,6 +116,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     return redirect("/app/billing");
   }
+
+  await trackAnalyticsEvent(session.shop, "billing_upgrade_requested", {
+    requestedPlan,
+    billingTestMode,
+  });
 
   await billing.request({
     plan: requestedPlan === "pro" ? PLAN_PRO : PLAN_PREMIUM,

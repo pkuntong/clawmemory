@@ -70,3 +70,27 @@ model StoreConfig {
   session           Session? @relation(fields: [sessionId], references: [id])
   sessionId         String?  @unique
 }
+
+model OnboardingProgress {
+  id                String   @id @default(uuid())
+  shop              String   @unique
+  themeBlockAdded   Boolean  @default(false)
+  shippingConfigured Boolean @default(false)
+  holidaysValidated Boolean  @default(false)
+  mobileVerified    Boolean  @default(false)
+  billingLive       Boolean  @default(false)
+  completedAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model AnalyticsEvent {
+  id         String   @id @default(uuid())
+  shop       String
+  name       String
+  properties String   @default("{}")
+  createdAt  DateTime @default(now())
+
+  @@index([shop, createdAt])
+  @@index([shop, name, createdAt])
+}

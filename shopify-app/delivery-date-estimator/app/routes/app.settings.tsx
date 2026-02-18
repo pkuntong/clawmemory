@@ -5,8 +5,16 @@ import type {
 } from "react-router";
 import { Form, useActionData, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { getStoreConfig, upsertStoreConfig } from "../db.server";
-import { authenticate } from "../shopify.server";
+import { getStoreConfig, trackAnalyticsEvent, upsertStoreConfig } from "../db.server";
+import {
+  PAID_PLAN_NAMES,
+  PLAN_PREMIUM,
+  PLAN_PRO,
+  authenticate,
+  isBillingTestMode,
+} from "../shopify.server";
+
+type PlanKey = "free" | "pro" | "premium";
 
 const ICON_STYLE_OPTIONS = ["truck", "package", "clock", "none"] as const;
 type IconStyle = (typeof ICON_STYLE_OPTIONS)[number];
@@ -108,8 +116,24 @@ const normalizedColor = (value: string, fallback: string) => {
     : value;
 };
 
+function getActivePlan(subscriptionName: string | undefined): PlanKey {
+  if (subscriptionName === PLAN_PREMIUM) {
+    return "premium";
+  }
+  if (subscriptionName === PLAN_PRO) {
+    return "pro";
+  }
+  return "free";
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { billing, session } = await authenticate.admin(request);
+  const { appSubscriptions } = await billing.check({
+    plans: [...PAID_PLAN_NAMES],
+    isTest: isBillingTestMode(),
+  });
+  const activePlan = getActivePlan(appSubscriptions.at(0)?.name);
+  const premiumUnlocked = activePlan === "premium";
   const rawConfig = await getStoreConfig(session.shop);
   const config = rawConfig
     ? {
@@ -118,12 +142,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       }
     : null;
 
-  return { shop: session.shop, config };
+  return { shop: session.shop, config, activePlan, premiumUnlocked };
 };
 
 type ActionData = {
   success: boolean;
   errors?: string[];
+  warnings?: string[];
 };
 
 const getInt = (
@@ -151,9 +176,16 @@ const getText = (formData: FormData, key: string, fallback: string) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs): Promise<ActionData> => {
-  const { session } = await authenticate.admin(request);
+  const { billing, session } = await authenticate.admin(request);
+  const warnings: string[] = [];
   const formData = await request.formData();
   const errors: string[] = [];
+  const { appSubscriptions } = await billing.check({
+    plans: [...PAID_PLAN_NAMES],
+    isTest: isBillingTestMode(),
+  });
+  const activePlan = getActivePlan(appSubscriptions.at(0)?.name);
+  const premiumUnlocked = activePlan === "premium";
 
   const shippingDaysMin = getInt(formData, "shippingDaysMin", DEFAULTS.shippingDaysMin, {
     min: 0,
@@ -183,6 +215,16 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
   const urgencyColor = getText(formData, "urgencyColor", DEFAULTS.urgencyColor);
   const holidaysInput = getText(formData, "holidays", "");
   const { holidays, invalid } = parseHolidayInput(holidaysInput);
+  const submittedPremiumFields = [
+    "holidays",
+    "countdownSuffix",
+    "iconStyle",
+    "fontSize",
+    "textColor",
+    "backgroundColor",
+    "borderColor",
+    "urgencyColor",
+  ].some((field) => formData.has(field));
 
   if (shippingDaysMax < shippingDaysMin) {
     errors.push("Max shipping days must be greater than or equal to min shipping days.");
@@ -196,26 +238,32 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     errors.push("Timezone is too long.");
   }
 
-  if (!isIconStyle(iconStyleRaw)) {
+  if (premiumUnlocked && !isIconStyle(iconStyleRaw)) {
     errors.push("Icon style must be one of: truck, package, clock, or none.");
   }
 
-  if (labelText.length > 80 || countdownText.length > 80 || countdownSuffix.length > 80) {
+  if (labelText.length > 80 || countdownText.length > 80) {
     errors.push("Label and countdown text fields must be 80 characters or fewer.");
   }
 
-  for (const [name, value] of [
-    ["Text color", textColor],
-    ["Background color", backgroundColor],
-    ["Border color", borderColor],
-    ["Urgency color", urgencyColor],
-  ]) {
-    if (!HEX_COLOR_PATTERN.test(value)) {
-      errors.push(`${name} must be a valid hex color (for example #333333).`);
+  if (premiumUnlocked && countdownSuffix.length > 80) {
+    errors.push("Countdown suffix must be 80 characters or fewer.");
+  }
+
+  if (premiumUnlocked) {
+    for (const [name, value] of [
+      ["Text color", textColor],
+      ["Background color", backgroundColor],
+      ["Border color", borderColor],
+      ["Urgency color", urgencyColor],
+    ]) {
+      if (!HEX_COLOR_PATTERN.test(value)) {
+        errors.push(`${name} must be a valid hex color (for example #333333).`);
+      }
     }
   }
 
-  if (invalid.length > 0) {
+  if (premiumUnlocked && invalid.length > 0) {
     const sample = invalid.slice(0, 5).join(", ");
     const suffix = invalid.length > 5 ? ` (+${invalid.length - 5} more)` : "";
     errors.push(
@@ -223,35 +271,55 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     );
   }
 
-  if (errors.length > 0) {
-    return { success: false, errors };
+  if (!premiumUnlocked && submittedPremiumFields) {
+    warnings.push(
+      "Advanced styling and holiday calendar are Premium features. Upgrade to Premium to edit them.",
+    );
   }
 
-  await upsertStoreConfig(session.shop, {
+  if (errors.length > 0) {
+    await trackAnalyticsEvent(session.shop, "settings_save_failed", {
+      errors,
+      activePlan,
+    });
+    return { success: false, errors, warnings };
+  }
+
+  const updateData = {
     cutoffHour,
     processingDays,
     shippingDaysMin,
     shippingDaysMax,
     excludeWeekends: formData.get("excludeWeekends") === "on",
     timezone,
-    holidays: JSON.stringify(holidays),
     showCountdown: formData.get("showCountdown") === "on",
     labelText,
     countdownText,
-    countdownSuffix,
-    iconStyle: iconStyleRaw,
-    fontSize,
-    textColor: normalizedColor(textColor, DEFAULTS.textColor),
-    backgroundColor: normalizedColor(backgroundColor, DEFAULTS.backgroundColor),
-    borderColor: normalizedColor(borderColor, DEFAULTS.borderColor),
-    urgencyColor: normalizedColor(urgencyColor, DEFAULTS.urgencyColor),
+  } as Parameters<typeof upsertStoreConfig>[1];
+
+  if (premiumUnlocked) {
+    updateData.holidays = JSON.stringify(holidays);
+    updateData.countdownSuffix = countdownSuffix;
+    updateData.iconStyle = iconStyleRaw;
+    updateData.fontSize = fontSize;
+    updateData.textColor = normalizedColor(textColor, DEFAULTS.textColor);
+    updateData.backgroundColor = normalizedColor(backgroundColor, DEFAULTS.backgroundColor);
+    updateData.borderColor = normalizedColor(borderColor, DEFAULTS.borderColor);
+    updateData.urgencyColor = normalizedColor(urgencyColor, DEFAULTS.urgencyColor);
+  }
+
+  await upsertStoreConfig(session.shop, updateData);
+  await trackAnalyticsEvent(session.shop, "settings_saved", {
+    activePlan,
+    premiumUnlocked,
+    warningsCount: warnings.length,
   });
 
-  return { success: true };
+  return { success: true, warnings };
 };
 
 export default function SettingsPage() {
-  const { config } = useLoaderData<typeof loader>();
+  const { activePlan, config, premiumUnlocked } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const c = {
     ...DEFAULTS,
@@ -262,6 +330,7 @@ export default function SettingsPage() {
   const iconStyle = isIconStyle(c.iconStyle) ? c.iconStyle : DEFAULTS.iconStyle;
   const holidayText = c.holidays.join("\n");
   const actionErrors = actionData?.errors ?? [];
+  const actionWarnings = actionData?.warnings ?? [];
 
   return (
     <s-page heading="Delivery Settings">
@@ -281,6 +350,26 @@ export default function SettingsPage() {
               <li key={error}>{error}</li>
             ))}
           </ul>
+        </s-section>
+      )}
+      {actionWarnings.length > 0 && (
+        <s-section>
+          <s-paragraph>Note:</s-paragraph>
+          <ul style={{ marginTop: 8 }}>
+            {actionWarnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </s-section>
+      )}
+
+      {!premiumUnlocked && (
+        <s-section>
+          <s-paragraph>
+            You are on the <strong>{activePlan}</strong> plan. Holiday calendar and advanced
+            style controls are available on <strong>Premium</strong>.
+          </s-paragraph>
+          <s-link href="/app/billing">Upgrade to Premium</s-link>
         </s-section>
       )}
 
@@ -356,22 +445,6 @@ export default function SettingsPage() {
           </div>
         </s-section>
 
-        <s-section heading="Holidays (Skipped Dates)">
-          <div style={{ display: "grid", gap: 8, maxWidth: 520 }}>
-            <label htmlFor="holidays-input">
-              Holiday Dates (one per line or comma-separated)
-            </label>
-            <textarea
-              id="holidays-input"
-              name="holidays"
-              rows={6}
-              defaultValue={holidayText}
-              placeholder={"2026-11-26\n2026-12-25\n2027-01-01"}
-            />
-            <small>Use YYYY-MM-DD format. These dates will be excluded from delivery estimates.</small>
-          </div>
-        </s-section>
-
         <s-section heading="Display">
           <div style={{ display: "grid", gap: 12, maxWidth: 520 }}>
             <label>
@@ -386,64 +459,95 @@ export default function SettingsPage() {
               Countdown Text
               <input name="countdownText" defaultValue={c.countdownText} maxLength={80} />
             </label>
-            <label>
-              Countdown Suffix
-              <input name="countdownSuffix" defaultValue={c.countdownSuffix} maxLength={80} />
-            </label>
-            <label>
-              Icon Style
-              <select name="iconStyle" defaultValue={iconStyle}>
-                <option value="truck">Truck</option>
-                <option value="package">Package</option>
-                <option value="clock">Clock</option>
-                <option value="none">None</option>
-              </select>
-            </label>
-            <label>
-              Font Size
-              <input
-                name="fontSize"
-                type="number"
-                min={10}
-                max={48}
-                step={1}
-                defaultValue={c.fontSize}
-              />
-            </label>
-            <label>
-              Text Color
-              <input
-                name="textColor"
-                type="color"
-                defaultValue={normalizedColor(c.textColor, DEFAULTS.textColor)}
-              />
-            </label>
-            <label>
-              Background Color
-              <input
-                name="backgroundColor"
-                type="color"
-                defaultValue={normalizedColor(c.backgroundColor, DEFAULTS.backgroundColor)}
-              />
-            </label>
-            <label>
-              Border Color
-              <input
-                name="borderColor"
-                type="color"
-                defaultValue={normalizedColor(c.borderColor, DEFAULTS.borderColor)}
-              />
-            </label>
-            <label>
-              Urgency Color
-              <input
-                name="urgencyColor"
-                type="color"
-                defaultValue={normalizedColor(c.urgencyColor, DEFAULTS.urgencyColor)}
-              />
-            </label>
           </div>
         </s-section>
+
+        {premiumUnlocked && (
+          <>
+            <s-section heading="Holidays (Skipped Dates)">
+              <div style={{ display: "grid", gap: 8, maxWidth: 520 }}>
+                <label htmlFor="holidays-input">
+                  Holiday Dates (one per line or comma-separated)
+                </label>
+                <textarea
+                  id="holidays-input"
+                  name="holidays"
+                  rows={6}
+                  defaultValue={holidayText}
+                  placeholder={"2026-11-26\n2026-12-25\n2027-01-01"}
+                />
+                <small>
+                  Use YYYY-MM-DD format. These dates will be excluded from delivery estimates.
+                </small>
+              </div>
+            </s-section>
+
+            <s-section heading="Advanced Display (Premium)">
+              <div style={{ display: "grid", gap: 12, maxWidth: 520 }}>
+                <label>
+                  Countdown Suffix
+                  <input
+                    name="countdownSuffix"
+                    defaultValue={c.countdownSuffix}
+                    maxLength={80}
+                  />
+                </label>
+                <label>
+                  Icon Style
+                  <select name="iconStyle" defaultValue={iconStyle}>
+                    <option value="truck">Truck</option>
+                    <option value="package">Package</option>
+                    <option value="clock">Clock</option>
+                    <option value="none">None</option>
+                  </select>
+                </label>
+                <label>
+                  Font Size
+                  <input
+                    name="fontSize"
+                    type="number"
+                    min={10}
+                    max={48}
+                    step={1}
+                    defaultValue={c.fontSize}
+                  />
+                </label>
+                <label>
+                  Text Color
+                  <input
+                    name="textColor"
+                    type="color"
+                    defaultValue={normalizedColor(c.textColor, DEFAULTS.textColor)}
+                  />
+                </label>
+                <label>
+                  Background Color
+                  <input
+                    name="backgroundColor"
+                    type="color"
+                    defaultValue={normalizedColor(c.backgroundColor, DEFAULTS.backgroundColor)}
+                  />
+                </label>
+                <label>
+                  Border Color
+                  <input
+                    name="borderColor"
+                    type="color"
+                    defaultValue={normalizedColor(c.borderColor, DEFAULTS.borderColor)}
+                  />
+                </label>
+                <label>
+                  Urgency Color
+                  <input
+                    name="urgencyColor"
+                    type="color"
+                    defaultValue={normalizedColor(c.urgencyColor, DEFAULTS.urgencyColor)}
+                  />
+                </label>
+              </div>
+            </s-section>
+          </>
+        )}
 
         <button type="submit">Save Settings</button>
       </Form>
