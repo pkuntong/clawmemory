@@ -187,7 +187,7 @@ export default function Index() {
         <s-stack direction="inline" gap="base">
           <s-link href="/app/settings">Open settings</s-link>
           <s-link href="/app/analytics">Open analytics</s-link>
-          <s-link href="/app/billing">Manage plan</s-link>
+          <s-link href="/app/billing?src=dashboard_nav">Manage plan</s-link>
           <s-link href="/app/setup">Open setup guide</s-link>
           <s-link href={themeEditorUrl} target="_blank">
             Open Theme Editor
@@ -205,7 +205,7 @@ export default function Index() {
           <s-paragraph>
             Recommended next plan: <strong>{suggestedUpgrade}</strong>.
           </s-paragraph>
-          <s-link href="/app/billing">
+          <s-link href="/app/billing?src=dashboard_revenue_nudge">
             {suggestedUpgrade === "Pro" ? "Upgrade to Pro" : "Upgrade to Premium"}
           </s-link>
         </s-section>
@@ -284,7 +284,9 @@ export default function Index() {
             <s-paragraph>
               Full trend breakdown and top-event analytics are included in the Premium plan.
             </s-paragraph>
-            <s-link href="/app/billing">Upgrade to Premium</s-link>
+            <s-link href="/app/billing?src=dashboard_analytics_snapshot">
+              Upgrade to Premium
+            </s-link>
           </>
         )}
       </s-section>

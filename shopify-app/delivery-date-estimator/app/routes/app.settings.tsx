@@ -379,7 +379,7 @@ export default function SettingsPage() {
             You are on the <strong>{activePlan}</strong> plan. Holiday calendar and advanced
             style controls are available on <strong>Pro</strong> and <strong>Premium</strong>.
           </s-paragraph>
-          <s-link href="/app/billing">Upgrade to Pro</s-link>
+          <s-link href="/app/billing?src=settings_paywall_pro">Upgrade to Pro</s-link>
         </s-section>
       )}
       {proUnlocked && !premiumUnlocked && (
@@ -388,7 +388,7 @@ export default function SettingsPage() {
             You have Pro configuration features unlocked. Upgrade to <strong>Premium</strong> for
             full conversion analytics.
           </s-paragraph>
-          <s-link href="/app/billing">Upgrade to Premium</s-link>
+          <s-link href="/app/billing?src=settings_paywall_premium">Upgrade to Premium</s-link>
         </s-section>
       )}
 

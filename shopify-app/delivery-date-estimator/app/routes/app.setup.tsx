@@ -47,7 +47,7 @@ export default function SetupPage() {
             </s-link>
           </s-list-item>
           <s-list-item>
-            <s-link href="/app/billing">Manage plans and billing</s-link>
+            <s-link href="/app/billing?src=setup_docs">Manage plans and billing</s-link>
           </s-list-item>
           <s-list-item>
             <s-link href="/app">Back to dashboard</s-link>

@@ -130,7 +130,7 @@ export default function AnalyticsPage() {
               ? "Upgrade to Premium to identify the highest-converting settings and justify pricing decisions."
               : "Upgrade to Premium when you are ready to optimize conversion with full data visibility."}
           </s-paragraph>
-          <s-link href="/app/billing">Upgrade to Premium</s-link>
+          <s-link href="/app/billing?src=analytics_paywall">Upgrade to Premium</s-link>
         </s-section>
       )}
 

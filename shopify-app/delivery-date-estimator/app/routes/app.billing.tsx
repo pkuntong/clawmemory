@@ -56,6 +56,10 @@ const BILLING_METRIC_KEYS = [
   "billing_upgrade_requested",
 ] as const;
 
+function sanitizeSource(value: string | null | undefined) {
+  return value?.toLowerCase().replace(/[^a-z0-9_]/g, "") || "direct";
+}
+
 function getActivePlan(subscriptionName: string | undefined): PlanKey {
   if (subscriptionName === PLAN_PREMIUM) {
     return "premium";
@@ -81,6 +85,7 @@ function getRequestedPlan(planValue: FormDataEntryValue | null): PlanKey | null 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { billing, session } = await authenticate.admin(request);
   const billingTestMode = isBillingTestMode();
+  const source = sanitizeSource(new URL(request.url).searchParams.get("src"));
 
   const { appSubscriptions } = await billing.check({
     plans: [...PAID_PLAN_NAMES],
@@ -105,6 +110,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   await incrementDailyMetric(session.shop, "billing_page_views");
+  await incrementDailyMetric(session.shop, `billing_page_source_${source}`);
 
   return {
     apiRequests30d,
@@ -113,6 +119,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     dailyMetrics,
     recommendedPlan,
     settingsSaves30d,
+    source,
     upgradeIntents30d,
     activeSubscriptionId: activeSubscription?.id ?? null,
   };
@@ -123,6 +130,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const billingTestMode = isBillingTestMode();
   const formData = await request.formData();
   const requestedPlan = getRequestedPlan(formData.get("plan"));
+  const source = sanitizeSource(
+    typeof formData.get("source") === "string" ? (formData.get("source") as string) : null,
+  );
 
   if (!requestedPlan) {
     return { error: "Invalid plan requested." };
@@ -137,8 +147,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     await trackAnalyticsEvent(session.shop, "billing_downgrade_requested", {
       requestedPlan,
       billingTestMode,
+      source,
     });
     await incrementDailyMetric(session.shop, "billing_downgrade_requested");
+    await incrementDailyMetric(session.shop, `billing_downgrade_requested_source_${source}`);
 
     await billing.cancel({
       subscriptionId,
@@ -152,8 +164,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   await trackAnalyticsEvent(session.shop, "billing_upgrade_requested", {
     requestedPlan,
     billingTestMode,
+    source,
   });
   await incrementDailyMetric(session.shop, "billing_upgrade_requested");
+  await incrementDailyMetric(session.shop, `billing_upgrade_requested_source_${source}`);
 
   await billing.request({
     plan: requestedPlan === "pro" ? PLAN_PRO : PLAN_PREMIUM,
@@ -172,6 +186,7 @@ export default function BillingPage() {
     currentPlan,
     recommendedPlan,
     settingsSaves30d,
+    source,
     upgradeIntents30d,
   } =
     useLoaderData<typeof loader>();
@@ -264,6 +279,7 @@ export default function BillingPage() {
 
               <Form method="post">
                 <input type="hidden" name="plan" value={planKey} />
+                <input type="hidden" name="source" value={source} />
                 {planKey === "free" && activeSubscriptionId && (
                   <input
                     type="hidden"
