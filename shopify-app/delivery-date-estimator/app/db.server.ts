@@ -234,3 +234,41 @@ export async function getDailyMetrics(
     totals,
   };
 }
+
+export async function getMetricTotalsByPrefix(
+  shop: string,
+  prefix: string,
+  windowDays = 30,
+  limit = 10,
+) {
+  const start = new Date();
+  start.setUTCDate(start.getUTCDate() - (windowDays - 1));
+  const fromDate = dateKeyFor(start);
+
+  const rows = await prisma.dailyMetric.findMany({
+    where: {
+      shop,
+      key: {
+        startsWith: prefix,
+      },
+      date: {
+        gte: fromDate,
+      },
+    },
+    select: {
+      key: true,
+      count: true,
+    },
+  });
+
+  const totals = new Map<string, number>();
+  for (const row of rows) {
+    const suffix = row.key.slice(prefix.length);
+    totals.set(suffix, (totals.get(suffix) ?? 0) + row.count);
+  }
+
+  return Array.from(totals.entries())
+    .map(([source, total]) => ({ source, total }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, limit);
+}

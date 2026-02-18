@@ -11,6 +11,7 @@ import {
 import {
   getAnalyticsSummary,
   getDailyMetrics,
+  getMetricTotalsByPrefix,
   getOnboardingProgress,
   incrementDailyMetric,
 } from "../db.server";
@@ -50,6 +51,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const premiumUnlocked = activePlan === "premium";
   const analyticsSummary = await getAnalyticsSummary(session.shop, 30);
   const dailyMetrics = await getDailyMetrics(session.shop, [...METRIC_KEYS], 30);
+  const topUpgradeSources = await getMetricTotalsByPrefix(
+    session.shop,
+    "billing_upgrade_requested_source_",
+    30,
+    8,
+  );
+  const topBillingEntrySources = await getMetricTotalsByPrefix(
+    session.shop,
+    "billing_page_source_",
+    30,
+    8,
+  );
   const onboarding = await getOnboardingProgress(session.shop);
   const completedSteps = [
     onboarding.themeBlockAdded,
@@ -71,6 +84,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     onboarding,
     premiumUnlocked,
     shop: session.shop,
+    topBillingEntrySources,
+    topUpgradeSources,
   };
 };
 
@@ -83,6 +98,8 @@ export default function AnalyticsPage() {
     completedSteps,
     dailyMetrics,
     premiumUnlocked,
+    topBillingEntrySources,
+    topUpgradeSources,
   } = useLoaderData<typeof loader>();
 
   const totalFor = (key: string) =>
@@ -242,6 +259,35 @@ export default function AnalyticsPage() {
               <s-paragraph>
                 Last event at {new Date(analyticsSummary.lastEventAt).toLocaleString()}.
               </s-paragraph>
+            )}
+          </s-section>
+
+          <s-section heading="Upgrade Source Performance (30 Days)">
+            {(topUpgradeSources.length ?? 0) > 0 ? (
+              <s-unordered-list>
+                {topUpgradeSources.map((item) => (
+                  <s-list-item key={item.source}>
+                    {item.source}: {item.total} upgrade intents
+                  </s-list-item>
+                ))}
+              </s-unordered-list>
+            ) : (
+              <s-paragraph>No attributed upgrade intents yet.</s-paragraph>
+            )}
+
+            {(topBillingEntrySources.length ?? 0) > 0 ? (
+              <>
+                <s-paragraph>Top billing entry sources:</s-paragraph>
+                <s-unordered-list>
+                  {topBillingEntrySources.map((item) => (
+                    <s-list-item key={item.source}>
+                      {item.source}: {item.total} visits
+                    </s-list-item>
+                  ))}
+                </s-unordered-list>
+              </>
+            ) : (
+              <s-paragraph>No billing entry source data yet.</s-paragraph>
             )}
           </s-section>
         </>
