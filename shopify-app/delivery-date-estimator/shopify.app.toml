@@ -25,3 +25,8 @@ scopes = "write_products"
 
 [auth]
 redirect_urls = [ "https://example.com/api/auth" ]
+
+[app_proxy]
+url = "/apps/delivery-date-estimator/config"
+subpath = "delivery-date-estimator"
+prefix = "apps"

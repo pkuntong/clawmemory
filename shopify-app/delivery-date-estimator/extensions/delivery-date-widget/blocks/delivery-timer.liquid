@@ -69,15 +69,15 @@
 
   <div class="de-content">
     <div class="de-delivery-line">
-      <span class="de-label">{{ block.settings.label_text | default: 'Estimated delivery' }}:</span>
+      <span class="de-label" id="de-label-{{ block.id }}">{{ block.settings.label_text | default: 'Estimated delivery' }}:</span>
       <span class="de-date" id="de-date-{{ block.id }}"></span>
     </div>
 
     {% if show_countdown %}
       <div class="de-countdown-line" id="de-countdown-wrap-{{ block.id }}">
-        <span class="de-countdown-label">{{ block.settings.countdown_text | default: 'Order within' }}</span>
+        <span class="de-countdown-label" id="de-countdown-label-{{ block.id }}">{{ block.settings.countdown_text | default: 'Order within' }}</span>
         <span class="de-countdown" id="de-countdown-{{ block.id }}"></span>
-        <span class="de-countdown-suffix">{{ block.settings.countdown_suffix | default: 'to get it by' }}
+        <span class="de-countdown-suffix"><span id="de-countdown-suffix-text-{{ block.id }}">{{ block.settings.countdown_suffix | default: 'to get it by' }}</span>
           <strong id="de-countdown-target-{{ block.id }}"></strong>
         </span>
       </div>
@@ -183,7 +183,84 @@
     const dateEl = document.getElementById('de-date-{{ block.id }}');
     const countdownEl = document.getElementById('de-countdown-{{ block.id }}');
     const countdownWrapEl = document.getElementById('de-countdown-wrap-{{ block.id }}');
+    const labelEl = document.getElementById('de-label-{{ block.id }}');
+    const countdownLabelEl = document.getElementById('de-countdown-label-{{ block.id }}');
+    const countdownSuffixTextEl = document.getElementById('de-countdown-suffix-text-{{ block.id }}');
     const countdownTargetEl = document.getElementById('de-countdown-target-{{ block.id }}');
+    let intervalId = null;
+
+    function applyRemoteConfig(remote) {
+      if (!remote || typeof remote !== 'object') return;
+
+      const intOr = (value, fallback) => {
+        const parsed = parseInt(value, 10);
+        return Number.isFinite(parsed) ? parsed : fallback;
+      };
+
+      config.cutoffHour = intOr(remote.cutoffHour, config.cutoffHour);
+      config.processingDays = intOr(remote.processingDays, config.processingDays);
+      config.shippingMin = intOr(remote.shippingDaysMin, config.shippingMin);
+      config.shippingMax = intOr(remote.shippingDaysMax, config.shippingMax);
+      config.fontSize = intOr(remote.fontSize, parseInt(getComputedStyle(block).fontSize, 10) || 14);
+      config.excludeWeekends = typeof remote.excludeWeekends === 'boolean'
+        ? remote.excludeWeekends
+        : config.excludeWeekends;
+      config.showCountdown = typeof remote.showCountdown === 'boolean'
+        ? remote.showCountdown
+        : config.showCountdown;
+      config.timezone = typeof remote.timezone === 'string' && remote.timezone
+        ? remote.timezone
+        : config.timezone;
+      config.holidays = Array.isArray(remote.holidays)
+        ? remote.holidays.filter((entry) => typeof entry === 'string')
+        : config.holidays;
+
+      if (labelEl && typeof remote.labelText === 'string' && remote.labelText) {
+        labelEl.textContent = remote.labelText + ':';
+      }
+      if (countdownLabelEl && typeof remote.countdownText === 'string' && remote.countdownText) {
+        countdownLabelEl.textContent = remote.countdownText;
+      }
+      if (
+        countdownSuffixTextEl &&
+        typeof remote.countdownSuffix === 'string' &&
+        remote.countdownSuffix
+      ) {
+        countdownSuffixTextEl.textContent = remote.countdownSuffix;
+      }
+
+      if (typeof remote.textColor === 'string' && remote.textColor) {
+        block.style.setProperty('--de-text-color', remote.textColor);
+      }
+      if (typeof remote.backgroundColor === 'string' && remote.backgroundColor) {
+        block.style.setProperty('--de-bg-color', remote.backgroundColor);
+      }
+      if (typeof remote.borderColor === 'string' && remote.borderColor) {
+        block.style.setProperty('--de-border-color', remote.borderColor);
+      }
+      if (typeof remote.urgencyColor === 'string' && remote.urgencyColor) {
+        block.style.setProperty('--de-urgency-color', remote.urgencyColor);
+      }
+      if (Number.isFinite(config.fontSize)) {
+        block.style.setProperty('--de-font-size', config.fontSize + 'px');
+      }
+    }
+
+    async function loadRemoteConfig() {
+      try {
+        const response = await fetch('/apps/delivery-date-estimator/config?source=theme_block', {
+          method: 'GET',
+          credentials: 'omit',
+          headers: { Accept: 'application/json' }
+        });
+
+        if (!response.ok) return;
+        const remote = await response.json();
+        applyRemoteConfig(remote);
+      } catch (error) {
+        // Fall back to block defaults when proxy is unavailable.
+      }
+    }
 
     function getNow() {
       return new Date(new Date().toLocaleString('en-US', { timeZone: config.timezone }));
@@ -272,14 +349,26 @@
         countdownWrapEl.style.display = 'none';
       }
 
-      block.classList.add('de-ready');
+      if (!block.classList.contains('de-ready')) {
+        block.classList.add('de-ready');
+      }
     }
 
-    calculate();
+    function restartInterval() {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
 
-    if (config.showCountdown) {
-      setInterval(calculate, 1000);
+      if (config.showCountdown) {
+        intervalId = setInterval(calculate, 1000);
+      }
     }
+
+    loadRemoteConfig().finally(() => {
+      calculate();
+      restartInterval();
+    });
   })();
 </script>
 
