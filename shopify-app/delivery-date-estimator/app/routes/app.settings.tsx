@@ -138,6 +138,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     isTest: isBillingTestMode(),
   });
   const activePlan = getActivePlan(appSubscriptions.at(0)?.name);
+  const proUnlocked = activePlan !== "free";
   const premiumUnlocked = activePlan === "premium";
   const rawConfig = await getStoreConfig(session.shop);
   const config = rawConfig
@@ -147,7 +148,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       }
     : null;
 
-  return { shop: session.shop, config, activePlan, premiumUnlocked };
+  await incrementDailyMetric(session.shop, "settings_page_views");
+
+  return { shop: session.shop, config, activePlan, proUnlocked, premiumUnlocked };
 };
 
 type ActionData = {
@@ -190,7 +193,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     isTest: isBillingTestMode(),
   });
   const activePlan = getActivePlan(appSubscriptions.at(0)?.name);
-  const premiumUnlocked = activePlan === "premium";
+  const proUnlocked = activePlan !== "free";
 
   const shippingDaysMin = getInt(formData, "shippingDaysMin", DEFAULTS.shippingDaysMin, {
     min: 0,
@@ -243,7 +246,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     errors.push("Timezone is too long.");
   }
 
-  if (premiumUnlocked && !isIconStyle(iconStyleRaw)) {
+  if (proUnlocked && !isIconStyle(iconStyleRaw)) {
     errors.push("Icon style must be one of: truck, package, clock, or none.");
   }
 
@@ -251,11 +254,11 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     errors.push("Label and countdown text fields must be 80 characters or fewer.");
   }
 
-  if (premiumUnlocked && countdownSuffix.length > 80) {
+  if (proUnlocked && countdownSuffix.length > 80) {
     errors.push("Countdown suffix must be 80 characters or fewer.");
   }
 
-  if (premiumUnlocked) {
+  if (proUnlocked) {
     for (const [name, value] of [
       ["Text color", textColor],
       ["Background color", backgroundColor],
@@ -268,7 +271,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     }
   }
 
-  if (premiumUnlocked && invalid.length > 0) {
+  if (proUnlocked && invalid.length > 0) {
     const sample = invalid.slice(0, 5).join(", ");
     const suffix = invalid.length > 5 ? ` (+${invalid.length - 5} more)` : "";
     errors.push(
@@ -276,9 +279,9 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     );
   }
 
-  if (!premiumUnlocked && submittedPremiumFields) {
+  if (!proUnlocked && submittedPremiumFields) {
     warnings.push(
-      "Advanced styling and holiday calendar are Premium features. Upgrade to Premium to edit them.",
+      "Advanced styling and holiday calendar are Pro features. Upgrade to Pro or Premium to edit them.",
     );
   }
 
@@ -303,7 +306,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     countdownText,
   } as Parameters<typeof upsertStoreConfig>[1];
 
-  if (premiumUnlocked) {
+  if (proUnlocked) {
     updateData.holidays = JSON.stringify(holidays);
     updateData.countdownSuffix = countdownSuffix;
     updateData.iconStyle = iconStyleRaw;
@@ -317,7 +320,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
   await upsertStoreConfig(session.shop, updateData);
   await trackAnalyticsEvent(session.shop, "settings_saved", {
     activePlan,
-    premiumUnlocked,
+    proUnlocked,
     warningsCount: warnings.length,
   });
   await incrementDailyMetric(session.shop, "settings_saved");
@@ -326,7 +329,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
 };
 
 export default function SettingsPage() {
-  const { activePlan, config, premiumUnlocked } = useLoaderData<typeof loader>();
+  const { activePlan, config, proUnlocked, premiumUnlocked } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const c = {
     ...DEFAULTS,
@@ -370,11 +373,20 @@ export default function SettingsPage() {
         </s-section>
       )}
 
-      {!premiumUnlocked && (
+      {!proUnlocked && (
         <s-section>
           <s-paragraph>
             You are on the <strong>{activePlan}</strong> plan. Holiday calendar and advanced
-            style controls are available on <strong>Premium</strong>.
+            style controls are available on <strong>Pro</strong> and <strong>Premium</strong>.
+          </s-paragraph>
+          <s-link href="/app/billing">Upgrade to Pro</s-link>
+        </s-section>
+      )}
+      {proUnlocked && !premiumUnlocked && (
+        <s-section>
+          <s-paragraph>
+            You have Pro configuration features unlocked. Upgrade to <strong>Premium</strong> for
+            full conversion analytics.
           </s-paragraph>
           <s-link href="/app/billing">Upgrade to Premium</s-link>
         </s-section>
@@ -469,7 +481,7 @@ export default function SettingsPage() {
           </div>
         </s-section>
 
-        {premiumUnlocked && (
+        {proUnlocked && (
           <>
             <s-section heading="Holidays (Skipped Dates)">
               <div style={{ display: "grid", gap: 8, maxWidth: 520 }}>
@@ -489,7 +501,7 @@ export default function SettingsPage() {
               </div>
             </s-section>
 
-            <s-section heading="Advanced Display (Premium)">
+            <s-section heading="Advanced Display (Pro+)">
               <div style={{ display: "grid", gap: 12, maxWidth: 520 }}>
                 <label>
                   Countdown Suffix

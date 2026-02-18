@@ -7,7 +7,11 @@ import {
   authenticate,
   isBillingTestMode,
 } from "../shopify.server";
-import { incrementDailyMetric, trackAnalyticsEvent } from "../db.server";
+import {
+  getDailyMetrics,
+  incrementDailyMetric,
+  trackAnalyticsEvent,
+} from "../db.server";
 
 type PlanKey = "free" | "pro" | "premium";
 
@@ -46,6 +50,11 @@ const PLAN_DETAILS = {
 } as const;
 
 const VALID_PLANS: PlanKey[] = ["free", "pro", "premium"];
+const BILLING_METRIC_KEYS = [
+  "api_config_requests",
+  "settings_saved",
+  "billing_upgrade_requested",
+] as const;
 
 function getActivePlan(subscriptionName: string | undefined): PlanKey {
   if (subscriptionName === PLAN_PREMIUM) {
@@ -70,7 +79,7 @@ function getRequestedPlan(planValue: FormDataEntryValue | null): PlanKey | null 
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { billing } = await authenticate.admin(request);
+  const { billing, session } = await authenticate.admin(request);
   const billingTestMode = isBillingTestMode();
 
   const { appSubscriptions } = await billing.check({
@@ -79,10 +88,32 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
 
   const activeSubscription = appSubscriptions.at(0);
+  const currentPlan = getActivePlan(activeSubscription?.name);
+  const dailyMetrics = await getDailyMetrics(session.shop, [...BILLING_METRIC_KEYS], 30);
+
+  const totalFor = (key: string) =>
+    dailyMetrics.totals.find((item) => item.key === key)?.total ?? 0;
+  const apiRequests30d = totalFor("api_config_requests");
+  const settingsSaves30d = totalFor("settings_saved");
+  const upgradeIntents30d = totalFor("billing_upgrade_requested");
+
+  let recommendedPlan: PlanKey | null = null;
+  if (currentPlan === "free") {
+    recommendedPlan = apiRequests30d >= 1200 || settingsSaves30d >= 25 ? "premium" : "pro";
+  } else if (currentPlan === "pro") {
+    recommendedPlan = "premium";
+  }
+
+  await incrementDailyMetric(session.shop, "billing_page_views");
 
   return {
+    apiRequests30d,
     billingTestMode,
-    currentPlan: getActivePlan(activeSubscription?.name),
+    currentPlan,
+    dailyMetrics,
+    recommendedPlan,
+    settingsSaves30d,
+    upgradeIntents30d,
     activeSubscriptionId: activeSubscription?.id ?? null,
   };
 };
@@ -134,7 +165,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function BillingPage() {
-  const { activeSubscriptionId, billingTestMode, currentPlan } =
+  const {
+    activeSubscriptionId,
+    apiRequests30d,
+    billingTestMode,
+    currentPlan,
+    recommendedPlan,
+    settingsSaves30d,
+    upgradeIntents30d,
+  } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
@@ -154,6 +193,27 @@ export default function BillingPage() {
           <s-paragraph>{actionData.error}</s-paragraph>
         </s-section>
       )}
+
+      <s-section heading="Plan Recommendation">
+        <s-paragraph>
+          Last 30 days: {apiRequests30d} storefront requests, {settingsSaves30d} settings saves,
+          {upgradeIntents30d} upgrade intents.
+        </s-paragraph>
+        {recommendedPlan ? (
+          <>
+            <s-paragraph>
+              Recommended next plan: <strong>{recommendedPlan}</strong>.
+            </s-paragraph>
+            <s-paragraph>
+              {recommendedPlan === "pro"
+                ? "Pro unlocks branded styling and holiday logic to improve conversion trust."
+                : "Premium adds conversion analytics so you can optimize copy and prove ROI."}
+            </s-paragraph>
+          </>
+        ) : (
+          <s-paragraph>Your current plan is aligned with recent usage.</s-paragraph>
+        )}
+      </s-section>
 
       <div
         style={{
@@ -180,13 +240,17 @@ export default function BillingPage() {
             <section
               key={planKey}
               style={{
-                border: "1px solid #d9d9d9",
+                border:
+                  recommendedPlan === planKey ? "2px solid #0f172a" : "1px solid #d9d9d9",
                 borderRadius: 12,
                 padding: 16,
                 background: "#fff",
               }}
             >
-              <h2 style={{ marginTop: 0, marginBottom: 8 }}>{plan.name}</h2>
+              <h2 style={{ marginTop: 0, marginBottom: 8 }}>
+                {plan.name}
+                {recommendedPlan === planKey ? " (Recommended)" : ""}
+              </h2>
               <p style={{ marginTop: 0, marginBottom: 12, fontWeight: 700 }}>
                 {plan.price}
               </p>

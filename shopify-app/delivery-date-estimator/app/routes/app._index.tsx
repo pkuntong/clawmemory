@@ -14,6 +14,7 @@ import {
 } from "../shopify.server";
 import {
   getAnalyticsSummary,
+  getDailyMetrics,
   getOnboardingProgress,
   incrementDailyMetric,
   trackAnalyticsEvent,
@@ -39,6 +40,14 @@ const ONBOARDING_STEPS: Array<{
   { key: "mobileVerified", label: "Verified rendering and copy on mobile." },
   { key: "billingLive", label: "Switched billing mode to live before launch." },
 ];
+
+const DASHBOARD_METRIC_KEYS = [
+  "api_config_requests",
+  "settings_saved",
+  "settings_save_failed",
+  "billing_upgrade_requested",
+  "dashboard_page_views",
+] as const;
 
 function getActivePlan(subscriptionName: string | undefined): PlanKey {
   if (subscriptionName === PLAN_PREMIUM) {
@@ -69,8 +78,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const onboarding = await getOnboardingProgress(session.shop);
   const completedSteps = ONBOARDING_STEPS.filter((step) => onboarding[step.key]).length;
   const completionPercent = Math.round((completedSteps / ONBOARDING_STEPS.length) * 100);
+  const dailyMetrics = await getDailyMetrics(session.shop, [...DASHBOARD_METRIC_KEYS], 30);
   const analyticsSummary =
     activePlan === "premium" ? await getAnalyticsSummary(session.shop, 30) : null;
+  await incrementDailyMetric(session.shop, "dashboard_page_views");
 
   return {
     activePlan,
@@ -78,6 +89,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     billingTestMode,
     completionPercent,
     completedSteps,
+    dailyMetrics,
     onboarding,
     shop: session.shop,
     themeEditorUrl,
@@ -126,6 +138,7 @@ export default function Index() {
     billingTestMode,
     completionPercent,
     completedSteps,
+    dailyMetrics,
     onboarding,
     shop,
     themeEditorUrl,
@@ -133,11 +146,28 @@ export default function Index() {
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
+  const totalFor = (key: string) =>
+    dailyMetrics.totals.find((item) => item.key === key)?.total ?? 0;
+  const apiRequests30d = totalFor("api_config_requests");
+  const settingsSaves30d = totalFor("settings_saved");
+  const saveFailures30d = totalFor("settings_save_failed");
+  const upgradeIntents30d = totalFor("billing_upgrade_requested");
+
   const planLabel = {
     free: "Free",
     pro: "Pro",
     premium: "Premium",
   }[activePlan];
+
+  const suggestedUpgrade =
+    activePlan === "free"
+      ? "Pro"
+      : activePlan === "pro"
+        ? "Premium"
+        : null;
+  const strongUpgradeSignal =
+    (activePlan === "free" && (apiRequests30d >= 500 || settingsSaves30d >= 10)) ||
+    (activePlan === "pro" && (apiRequests30d >= 2000 || upgradeIntents30d >= 1));
 
   return (
     <s-page heading="Delivery Date Estimator">
@@ -156,6 +186,7 @@ export default function Index() {
         </s-paragraph>
         <s-stack direction="inline" gap="base">
           <s-link href="/app/settings">Open settings</s-link>
+          <s-link href="/app/analytics">Open analytics</s-link>
           <s-link href="/app/billing">Manage plan</s-link>
           <s-link href="/app/setup">Open setup guide</s-link>
           <s-link href={themeEditorUrl} target="_blank">
@@ -163,6 +194,22 @@ export default function Index() {
           </s-link>
         </s-stack>
       </s-section>
+
+      {suggestedUpgrade && (
+        <s-section heading="Revenue Nudge">
+          <s-paragraph>
+            {strongUpgradeSignal
+              ? `Strong upsell signal detected from the last 30 days (${apiRequests30d} widget requests, ${settingsSaves30d} settings saves).`
+              : "Unlock higher conversion features as your traffic grows."}
+          </s-paragraph>
+          <s-paragraph>
+            Recommended next plan: <strong>{suggestedUpgrade}</strong>.
+          </s-paragraph>
+          <s-link href="/app/billing">
+            {suggestedUpgrade === "Pro" ? "Upgrade to Pro" : "Upgrade to Premium"}
+          </s-link>
+        </s-section>
+      )}
 
       {actionData?.error && (
         <s-section>
@@ -231,7 +278,11 @@ export default function Index() {
         ) : (
           <>
             <s-paragraph>
-              Analytics visibility is included in the Premium plan.
+              Last 30 days preview: {apiRequests30d} requests, {settingsSaves30d} settings saves,
+              {saveFailures30d} save failures.
+            </s-paragraph>
+            <s-paragraph>
+              Full trend breakdown and top-event analytics are included in the Premium plan.
             </s-paragraph>
             <s-link href="/app/billing">Upgrade to Premium</s-link>
           </>

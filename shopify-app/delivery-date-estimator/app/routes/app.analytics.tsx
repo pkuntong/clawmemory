@@ -12,6 +12,7 @@ import {
   getAnalyticsSummary,
   getDailyMetrics,
   getOnboardingProgress,
+  incrementDailyMetric,
 } from "../db.server";
 
 type PlanKey = "free" | "pro" | "premium";
@@ -23,6 +24,7 @@ const METRIC_KEYS = [
   "billing_upgrade_requested",
   "billing_downgrade_requested",
   "onboarding_step_toggled",
+  "analytics_page_views",
 ] as const;
 
 function getActivePlan(subscriptionName: string | undefined): PlanKey {
@@ -57,6 +59,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     onboarding.billingLive,
   ].filter(Boolean).length;
   const completionPercent = Math.round((completedSteps / 5) * 100);
+  await incrementDailyMetric(session.shop, "analytics_page_views");
 
   return {
     activePlan,
@@ -93,6 +96,8 @@ export default function AnalyticsPage() {
   const upgradeIntentRate =
     settingsSaved > 0 ? Math.round((upgradeIntents / settingsSaved) * 100) : 0;
   const recentRows = dailyMetrics.days.slice(-14);
+  const strongPremiumSignal =
+    requests >= 1000 || settingsSaved >= 20 || upgradeIntents >= 1;
 
   return (
     <s-page heading="Analytics">
@@ -115,8 +120,15 @@ export default function AnalyticsPage() {
       {!premiumUnlocked && (
         <s-section heading="Premium Analytics">
           <s-paragraph>
-            You are on the <strong>{activePlan}</strong> plan. Detailed trend tables and top
-            event breakdown are available on <strong>Premium</strong>.
+            You are on the <strong>{activePlan}</strong> plan.
+            {strongPremiumSignal
+              ? " Your usage indicates strong value from Premium analytics right now."
+              : " Detailed trend tables and top event breakdown are available on Premium."}
+          </s-paragraph>
+          <s-paragraph>
+            {strongPremiumSignal
+              ? "Upgrade to Premium to identify the highest-converting settings and justify pricing decisions."
+              : "Upgrade to Premium when you are ready to optimize conversion with full data visibility."}
           </s-paragraph>
           <s-link href="/app/billing">Upgrade to Premium</s-link>
         </s-section>
