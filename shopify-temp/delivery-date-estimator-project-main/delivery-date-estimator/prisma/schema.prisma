@@ -1,0 +1,72 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+model Session {
+  id                 String    @id
+  shop               String
+  state              String
+  isOnline           Boolean   @default(false)
+  scope              String?
+  expires            DateTime?
+  accessToken        String
+  userId             BigInt?
+  firstName          String?
+  lastName           String?
+  email              String?
+  accountOwner       Boolean   @default(false)
+  locale             String?
+  collaborator       Boolean?  @default(false)
+  emailVerified      Boolean?  @default(false)
+  refreshToken       String?
+  refreshTokenExpires DateTime?
+  
+  // Relations
+  storeConfig        StoreConfig?
+}
+
+model StoreConfig {
+  id                String   @id @default(uuid())
+  shop              String   @unique
+  
+  // Delivery Settings
+  cutoffHour        Int      @default(14) // 24h format (14 = 2pm)
+  processingDays    Int      @default(1)  // Business days to process
+  shippingDaysMin   Int      @default(3)  // Min shipping days
+  shippingDaysMax   Int      @default(5)  // Max shipping days
+  excludeWeekends   Boolean  @default(true)
+  timezone          String   @default("America/New_York")
+  holidays          String   @default("") // JSON array of YYYY-MM-DD strings
+  
+  // Display Settings
+  showCountdown     Boolean  @default(true)
+  labelText         String   @default("Estimated delivery")
+  countdownText     String   @default("Order within")
+  countdownSuffix   String   @default("to get it by")
+  iconStyle         String   @default("truck") // truck, package, clock, none
+  fontSize          Int      @default(14)
+  textColor         String   @default("#333333")
+  backgroundColor   String   @default("#f8f9fa")
+  borderColor       String   @default("#e2e2e2")
+  urgencyColor      String   @default("#e63946")
+  
+  // Metadata
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  session           Session? @relation(fields: [sessionId], references: [id])
+  sessionId         String?  @unique
+}

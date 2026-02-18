@@ -1,0 +1,60 @@
+import type { LoaderFunctionArgs } from "react-router";
+import { json } from "react-router";
+import { getStoreConfig } from "../db.server";
+
+// Public API endpoint for theme extension
+// No auth required — theme extensions can't authenticate
+export async function loader({ request }: LoaderFunctionArgs) {
+  const url = new URL(request.url);
+  const shop = url.searchParams.get("shop");
+
+  if (!shop) {
+    return json({ error: "Missing shop parameter" }, { status: 400 });
+  }
+
+  // Get store config or return defaults
+  const config = await getStoreConfig(shop);
+
+  if (!config) {
+    // Return sensible defaults for new stores
+    return json({
+      cutoffHour: 14,
+      processingDays: 1,
+      shippingDaysMin: 3,
+      shippingDaysMax: 5,
+      excludeWeekends: true,
+      timezone: "America/New_York",
+      holidays: [],
+      showCountdown: true,
+      labelText: "Estimated delivery",
+      countdownText: "Order within",
+      countdownSuffix: "to get it by",
+      iconStyle: "truck",
+      fontSize: 14,
+      textColor: "#333333",
+      backgroundColor: "#f8f9fa",
+      borderColor: "#e2e2e2",
+      urgencyColor: "#e63946",
+    });
+  }
+
+  return json({
+    cutoffHour: config.cutoffHour,
+    processingDays: config.processingDays,
+    shippingDaysMin: config.shippingDaysMin,
+    shippingDaysMax: config.shippingDaysMax,
+    excludeWeekends: config.excludeWeekends,
+    timezone: config.timezone,
+    holidays: JSON.parse(config.holidays || "[]"),
+    showCountdown: config.showCountdown,
+    labelText: config.labelText,
+    countdownText: config.countdownText,
+    countdownSuffix: config.countdownSuffix,
+    iconStyle: config.iconStyle,
+    fontSize: config.fontSize,
+    textColor: config.textColor,
+    backgroundColor: config.backgroundColor,
+    borderColor: config.borderColor,
+    urgencyColor: config.urgencyColor,
+  });
+}

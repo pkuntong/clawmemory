@@ -1,0 +1,56 @@
+## Project Context
+
+This is a Shopify app called "Delivery Date Estimator & Countdown Timer".
+It shows estimated delivery dates and a live countdown timer on product pages.
+Merchants configure processing time, shipping speed, cutoff times, and holidays.
+
+## Tech Stack
+
+- Shopify CLI + React Router template (official Shopify app starter)
+- Theme App Extension for the storefront widget (Liquid + JS + CSS)
+- Polaris UI components for admin settings pages
+- Node.js / Express backend
+- Prisma ORM with SQLite (dev) / PostgreSQL (production)
+- Deployed on Railway.app
+
+## Project Structure
+
+- `extensions/delivery-date-widget/blocks/delivery-timer.liquid` — THE MAIN WIDGET
+  This is the storefront-facing component. It's a single Liquid file containing
+  HTML, CSS, JavaScript, and the Shopify schema config. All delivery date
+  calculation logic runs client-side in the browser.
+
+- `app/routes/` — Shopify admin pages (settings, billing, etc.)
+- `app/routes/app.billing.jsx` — Subscription billing (Free / Pro $7.99 / Premium $14.99)
+- `shopify.app.toml` — Shopify app configuration including billing plans
+
+## Key Files in _custom-files/
+
+- `delivery-timer.liquid` → Copy to `extensions/delivery-date-widget/blocks/`
+- `app.billing.jsx` → Copy to `app/routes/`
+- `billing-config-for-toml.txt` → Append content to `shopify.app.toml`
+- `privacy-policy.html` → Host publicly, URL goes in app listing
+
+## Business Logic
+
+The delivery date calculation:
+1. Check current time against cutoff hour (default 2 PM)
+2. If before cutoff AND business day → processing starts today
+3. If after cutoff OR weekend/holiday → processing starts next business day
+4. Add processing days (business days only)
+5. Add shipping days (min-max range, business days only)
+6. Skip configured holidays throughout
+
+## Pricing
+
+- Free: 1 shipping config, basic widget
+- Pro ($7.99/mo): Unlimited configs, full customization, holidays, priority support
+- Premium ($14.99/mo): Multi-language, A/B testing, analytics, dedicated support
+
+## Important Notes
+
+- The widget is entirely client-side (no server calls from storefront)
+- All Shopify admin UI uses Polaris components
+- Billing uses Shopify's native billing API (they handle payments)
+- `isTest: true` must be changed to `false` before going live
+- Shopify takes 0% of first $1M in app revenue

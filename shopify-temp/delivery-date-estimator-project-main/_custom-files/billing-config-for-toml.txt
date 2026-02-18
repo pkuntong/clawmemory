@@ -1,0 +1,18 @@
+# BILLING CONFIG — Add this to the bottom of your shopify.app.toml file
+#
+# This tells Shopify your app has paid plans.
+# Without this, the billing API won't work.
+
+[billing]
+
+  [billing.Pro]
+  amount = 7.99
+  currency_code = "USD"
+  interval = "every_30_days"
+  test = true # CHANGE TO false BEFORE GOING LIVE
+
+  [billing.Premium]
+  amount = 14.99
+  currency_code = "USD"
+  interval = "every_30_days"
+  test = true # CHANGE TO false BEFORE GOING LIVE

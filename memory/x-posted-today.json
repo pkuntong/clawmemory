@@ -1,0 +1,14 @@
+{
+  "date": "Fri Feb 06 2026",
+  "count": 0,
+  "posts": [
+    {
+      "type": "like",
+      "tweetId": "2019653523865313323",
+      "text": "Like - facts",
+      "timestamp": "2026-02-06T16:21:03.058Z",
+      "success": false,
+      "error": "Command failed: bird like 2019653523865313323 --auth-token ad09349bee5e5e47179f113f44a6dbb9de8a1e88 --ct0 bc2f6e729f3dee4915df69d957d82a28abdc0b9e22349726ee9e6207dbcf4c0951257b512fa8bf0ef6aaad8f82a5bc"
+    }
+  ]
+}

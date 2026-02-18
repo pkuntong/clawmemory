@@ -1,0 +1,6 @@
+{
+  "lastChecks": {
+    "moonshotApi": 1771306500
+  },
+  "note": "Cannot check Moonshot API balance programmatically - requires login to platform.moonshot.cn. Manual check recommended at https://platform.moonshot.cn"
+}
