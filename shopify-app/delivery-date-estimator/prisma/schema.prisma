@@ -94,3 +94,17 @@ model AnalyticsEvent {
   @@index([shop, createdAt])
   @@index([shop, name, createdAt])
 }
+
+model DailyMetric {
+  id        String   @id @default(uuid())
+  shop      String
+  key       String
+  date      String
+  count     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shop, key, date])
+  @@index([shop, date])
+  @@index([shop, key, date])
+}

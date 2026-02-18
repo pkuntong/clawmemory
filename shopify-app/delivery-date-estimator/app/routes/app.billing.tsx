@@ -7,7 +7,7 @@ import {
   authenticate,
   isBillingTestMode,
 } from "../shopify.server";
-import { trackAnalyticsEvent } from "../db.server";
+import { incrementDailyMetric, trackAnalyticsEvent } from "../db.server";
 
 type PlanKey = "free" | "pro" | "premium";
 
@@ -107,6 +107,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       requestedPlan,
       billingTestMode,
     });
+    await incrementDailyMetric(session.shop, "billing_downgrade_requested");
 
     await billing.cancel({
       subscriptionId,
@@ -121,6 +122,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     requestedPlan,
     billingTestMode,
   });
+  await incrementDailyMetric(session.shop, "billing_upgrade_requested");
 
   await billing.request({
     plan: requestedPlan === "pro" ? PLAN_PRO : PLAN_PREMIUM,

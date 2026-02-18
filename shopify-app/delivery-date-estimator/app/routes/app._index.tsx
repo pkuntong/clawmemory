@@ -15,6 +15,7 @@ import {
 import {
   getAnalyticsSummary,
   getOnboardingProgress,
+  incrementDailyMetric,
   trackAnalyticsEvent,
   updateOnboardingProgress,
   type OnboardingStepKey,
@@ -113,6 +114,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     step,
     checked,
   });
+  await incrementDailyMetric(session.shop, "onboarding_step_toggled");
 
   return { success: true };
 };

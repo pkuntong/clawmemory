@@ -5,7 +5,12 @@ import type {
 } from "react-router";
 import { Form, useActionData, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { getStoreConfig, trackAnalyticsEvent, upsertStoreConfig } from "../db.server";
+import {
+  getStoreConfig,
+  incrementDailyMetric,
+  trackAnalyticsEvent,
+  upsertStoreConfig,
+} from "../db.server";
 import {
   PAID_PLAN_NAMES,
   PLAN_PREMIUM,
@@ -282,6 +287,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
       errors,
       activePlan,
     });
+    await incrementDailyMetric(session.shop, "settings_save_failed");
     return { success: false, errors, warnings };
   }
 
@@ -314,6 +320,7 @@ export const action = async ({ request }: ActionFunctionArgs): Promise<ActionDat
     premiumUnlocked,
     warningsCount: warnings.length,
   });
+  await incrementDailyMetric(session.shop, "settings_saved");
 
   return { success: true, warnings };
 };

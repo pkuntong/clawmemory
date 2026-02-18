@@ -1,16 +1,21 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { data } from "react-router";
-import { getStoreConfig } from "../db.server";
+import { getStoreConfig, incrementDailyMetric } from "../db.server";
 
 // Public API endpoint for theme extension
 // No auth required — theme extensions can't authenticate
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const shop = url.searchParams.get("shop");
+  const source = (url.searchParams.get("source") || "unknown").toLowerCase();
 
   if (!shop) {
     return data({ error: "Missing shop parameter" }, { status: 400 });
   }
+
+  await incrementDailyMetric(shop, "api_config_requests");
+  const sourceKey = source.replace(/[^a-z0-9_]/g, "") || "unknown";
+  await incrementDailyMetric(shop, `api_config_source_${sourceKey}`);
 
   // Get store config or return defaults
   const config = await getStoreConfig(shop);
